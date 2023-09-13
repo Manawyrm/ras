@@ -22,6 +22,9 @@ all: x75
 x75: $(OBJS)
 	$(CC) $(CCFLAGS) $^ $(DEPFLAGS_LD) -o x75
 
+pppdtest: $(OBJS)
+	$(CC) $(CCFLAGS) $^ $(DEPFLAGS_LD) -o pppdtest
+
 clean:
 	$(RM) $(OBJS)
 	$(RM) x75
