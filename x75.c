@@ -10,7 +10,7 @@
 #define DLPRINTF(args...) fprintf(stderr, args)
 
 // yate interfacing code by Karl Koscher <supersat@cs.washington.edu>
-typedef int16_t samp_t;
+typedef uint8_t samp_t;
 
 #define FD_YATE_STDIN 0
 #define FD_YATE_STDOUT 1
@@ -71,6 +71,7 @@ void yate_parse_incoming_message(char *buf, int len)
 	message_id_end[0] = 0x00;
 	fprintf(stderr, "%%%%<message:%s:true:\n", message_id);
 	fprintf(stdout, "%%%%<message:%s:true:\n", message_id);
+	fflush(stdout);
 }
 
 int main(int argc, char const *argv[])
@@ -79,13 +80,16 @@ int main(int argc, char const *argv[])
 	int numSamples;
 	int skipSamples;
 	char buf[4096];
-	samp_t inSampleBuf[sizeof(buf) / 2];
-	samp_t outSampleBuf[sizeof(buf) / 2];
+	uint8_t inSampleBuf[sizeof(buf) / 2];
+	uint8_t outSampleBuf[sizeof(buf) / 2];
 	fd_set in_fds;
 	fd_set out_fds;
 	fd_set err_fds;
 	struct termios termios;
 	int child = 0;
+
+	// fill our codec conversion tables
+	alaw_slin_init();
 
 	//dp_dummy_init();
 	//dp_sinus_init();
@@ -128,7 +132,6 @@ int main(int argc, char const *argv[])
 
 		FD_SET(FD_YATE_STDIN, &in_fds);
 		FD_SET(FD_YATE_SAMPLE_INPUT, &in_fds);
-		//FD_SET(modem.modem->pty, &in_fds);
 
 		FD_SET(1, &out_fds);
 		FD_SET(FD_YATE_SAMPLE_OUTPUT, &out_fds);
@@ -136,7 +139,6 @@ int main(int argc, char const *argv[])
 		for (int i = 0; i < 5; i++) {
 			FD_SET(i, &err_fds);
 		}
-		//FD_SET(modem.modem->pty, &err_fds);
 
 		if (select(FD_MAX, &in_fds, NULL, &err_fds, NULL) <= 0) {
 			fprintf(stderr, "select failed\n");
@@ -150,6 +152,7 @@ int main(int argc, char const *argv[])
 			}
 		}
 
+		// Yate will send us messages through STDIN
 		if (FD_ISSET(FD_YATE_STDIN, &in_fds)) {
 			len = read(FD_YATE_STDIN, buf, sizeof(buf));
 			if (len <= 0) {
@@ -181,6 +184,7 @@ int main(int argc, char const *argv[])
 			}
 		}
 
+		// Yate will send us samples via FD 3
 		if (FD_ISSET(FD_YATE_SAMPLE_INPUT, &in_fds)) {
 			len = read(FD_YATE_SAMPLE_INPUT, buf, sizeof(buf));
 			if (len <= 0) {
@@ -190,49 +194,30 @@ int main(int argc, char const *argv[])
 			if (len % 2) {
 				DLPRINTF("read an odd number of bytes!! (%d)\n", len);
 			}
-//			SFWRITE(buf, 1, len, inSamples);
-//
-//			numSamples = (sizeof(inSampleBuf) / 2) -
-//				resample(&modem.in_resamp_state, (int16_t *)buf, len / 2,
-//				inSampleBuf, sizeof(inSampleBuf) / 2);
-//			
-//			DLPRINTF("Received %d bytes (%d samples), resampled to %d samples (ud = %d)\n",
-//				len, len / 2, numSamples, modem.modem->update_delay);
-//			SFWRITE(inSampleBuf, 2, numSamples, inResamples);
-//			
-//			skipSamples = 0;
-//			if (modem.modem->update_delay < 0) {
-//				if ( -modem.modem->update_delay >= len / 2) {
-//					DLPRINTF("change delay -%d...\n", len / 2);
-//					modem.delay -= len / 2;
-//					modem.modem->update_delay += len / 2;
-//					continue;
-//				}
-//
-//				DLPRINTF("change delay %d...\n", modem.modem->update_delay);
-//				skipSamples = modem.modem->update_delay;
-//				numSamples += skipSamples; // skipSamples is negative here
-//				modem.delay += modem.modem->update_delay;
-//				modem.modem->update_delay = 0;
-//			}
-//
-//			modem_process(modem.modem, inSampleBuf - skipSamples, outSampleBuf, numSamples);
-//
-//			SFWRITE(outSampleBuf, 2, numSamples, outSamples);
-//			
-//			numSamples = (sizeof(buf) / 2) - 
-//				resample(&modem.out_resamp_state, outSampleBuf, numSamples,
-//				(int16_t *)buf, sizeof(buf) / 2);
-//			
-//			DLPRINTF("upconverted modem samples to %d\n", numSamples);
-//			SFWRITE(buf, 2, numSamples, outResamples);
-//
-//			DLPRINTF("Writing %d samples (%d bytes) back to YATE\n", numSamples, numSamples * 2);
-//			
-//			if (write(FD_YATE_SAMPLE_OUTPUT, buf, numSamples * 2) != numSamples * 2) {
-//				fprintf(stderr, "can't write the entire outgoing buffer!\n");
-//				break;
-//			}
+			numSamples = len / 2;
+
+			//DLPRINTF("Received %d bytes (%d samples)\n", len, numSamples);
+			
+			// convert the "signed linear PCM" back to "alaw" (so we get our real bits back)
+			for (int i = 0; i < numSamples; i++)
+			{
+				inSampleBuf[i] = s2a[ ((uint16_t *)buf)[i] ];
+			}
+
+			
+			memcpy(outSampleBuf, inSampleBuf, numSamples);
+
+			for (int i = 0; i < numSamples; i++)
+			{
+				((int16_t *)buf)[i] = a2s[ outSampleBuf[i] ];
+			}
+
+			//DLPRINTF("Writing %d samples (%d bytes) back to YATE\n", numSamples, len);
+			
+			if (write(FD_YATE_SAMPLE_OUTPUT, buf, len) != len) {
+				fprintf(stderr, "can't write the entire outgoing buffer!\n");
+				break;
+			}
 		}
 
 		//if (FD_ISSET(modem.modem->pty, &in_fds)) {
