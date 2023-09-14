@@ -90,19 +90,17 @@ int start_pppd(int *fd, int *pppd)
 	stropt[pos] = strdup ("file"); // PPPD options
 	pos++;
 
-	stropt[pos] = strdup ("/etc/ppp/options"); // PPPD options
+	stropt[pos] = strdup ("/etc/ppp/options.osmoras"); // PPPD options
 	pos++;
 
-	stropt[pos] = strdup ("172.16.0.1:172.16.0.2"); // PPPD options
+	stropt[pos] = strdup ("172.21.118.1:172.21.118.5"); // PPPD options
 	pos++;
 
-	stropt[pos] = strdup ("sync"); // PPPD options
-	pos++;
-	
-	stropt[pos] = strdup ("require-pap"); // PPPD options
+	stropt[pos] = strdup ("passive"); // PPPD options
 	pos++;
 
-
+	stropt[pos] = strdup ("nodetach"); // PPPD options
+	pos++;
 
 	fprintf(stderr, "%s: I'm running: \n", __FUNCTION__);
 	for (x = 0; stropt[x]; x++)

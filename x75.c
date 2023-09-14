@@ -139,11 +139,11 @@ void yate_parse_incoming_message(char *buf, int len)
 
 void handle_incoming_hdlc_packet(uint8_t *buf, int len)
 {
-	fprintf(stderr, "I 2023-09-13T19:33:00Z\n000000 %s\n\n",  osmo_hexdump(buf, len));
+	fprintf(stderr, "shark I 2023-09-13T19:33:00Z\nshark 000000 %s\n\n",  osmo_hexdump(buf, len));
 
 	// Encode the packet back into HDLC (this time byte aligned)
 	int pos = 0;
-	unsigned char e;
+	unsigned char e = 0;
 
 	// calculate checksum
 	uint16_t fcs = PPP_INITFCS;
@@ -195,7 +195,7 @@ void handle_sample_buffer(uint8_t *outSampleBuf, uint8_t *inSampleBuf, int numSa
 	while (samplesProcessed < numSamples)
 	{
 		rv = osmo_isdnhdlc_decode(&hdlc_rx,
-			inSampleBuf, numSamples, &count,
+			inSampleBuf + samplesProcessed, numSamples - samplesProcessed, &count,
 			hdlc_rx_buf, sizeof(hdlc_rx_buf) - 3
 		);
 
@@ -222,7 +222,7 @@ void handle_sample_buffer(uint8_t *outSampleBuf, uint8_t *inSampleBuf, int numSa
 	if (hdlc_tx_buf_len)
 	{
 		//fprintf(stderr, "osmo_isdnhdlc_encode: %s\n\n",  osmo_hexdump(hdlc_tx_buf + hdlc_tx_buf_pos, hdlc_tx_buf_len - hdlc_tx_buf_pos));
-		fprintf(stderr, "O 2023-09-13T19:33:00Z\n000000 %s\n\n",  osmo_hexdump(hdlc_tx_buf + hdlc_tx_buf_pos, hdlc_tx_buf_len - hdlc_tx_buf_pos));
+		fprintf(stderr, "shark O 2023-09-13T19:33:00Z\nshark 000000 %s\n\n",  osmo_hexdump(hdlc_tx_buf + hdlc_tx_buf_pos, hdlc_tx_buf_len - hdlc_tx_buf_pos));
 	}
 	rv = osmo_isdnhdlc_encode(&hdlc_tx,
 		&hdlc_tx_buf + hdlc_tx_buf_pos, hdlc_tx_buf_len - hdlc_tx_buf_pos, &count,
@@ -237,16 +237,24 @@ void handle_sample_buffer(uint8_t *outSampleBuf, uint8_t *inSampleBuf, int numSa
 	if (rv > 0)
 	{
 		//fprintf(stderr, "O %s\n\n",  osmo_hexdump(outSampleBuf, rv));
-		hdlc_tx_buf_pos += count;
-		if (hdlc_tx_buf_pos == hdlc_tx_buf_len)
+		if (hdlc_tx_buf_len)
 		{
-			// packet sent successfully
-			hdlc_tx_buf_len = 0;
-			hdlc_tx_buf_pos = 0;
+			hdlc_tx_buf_pos += count;
+			if (hdlc_tx_buf_pos == hdlc_tx_buf_len)
+			{
+				// packet sent successfully
+				fprintf(stderr, "packet sent successfully: hdlc_tx_buf_len: %d, count: %d\n", hdlc_tx_buf_len, count);
+				hdlc_tx_buf_len = 0;
+				hdlc_tx_buf_pos = 0;
+			}
 		}
+		
 	}
 
 }
+
+int deframed_bytes = 0;
+unsigned char escape = 0;
 
 int main(int argc, char const *argv[])
 {
@@ -339,11 +347,9 @@ int main(int argc, char const *argv[])
 				if (len <= 0) {
 					break;
 				}
-				fprintf(stderr, "pppd wrote SYNC: %s\n\n",  osmo_hexdump(pppd_rx_buf, len));
+				fprintf(stderr, "pppd TX (HDLC): %s\n\n",  osmo_hexdump(pppd_rx_buf, len));
 
-				int deframed_bytes = 0;
-
-				unsigned char escape = 0;
+				
 				for (int i = 0; i < len; ++i)
 				{
 					unsigned char ch = pppd_rx_buf[i];
@@ -356,11 +362,19 @@ int main(int argc, char const *argv[])
 								break;
 						    }
 
-						    if (len >= 2) {
-						      /* must be the end, drop the FCS */
-						      len -= 2;
+						    if (deframed_bytes >= 2) {
+								/* must be the end, drop the FCS */
+								deframed_bytes -= 2;
+
+						        hdlc_tx_buf_len = deframed_bytes;
+								hdlc_tx_buf_pos = 0;
+
+								escape = 0;
+								deframed_bytes = 0;
+
+								fprintf(stderr, "pppd TX (plain): %s\n\n",  osmo_hexdump(hdlc_tx_buf, hdlc_tx_buf_len));
 						    }
-						    else if (len == 1) {
+						    else if (deframed_bytes == 1) {
 						      /* Do nothing, just return the single character*/
 						    }
 						    else {
@@ -384,11 +398,6 @@ int main(int argc, char const *argv[])
 						    deframed_bytes++;
 					}	
 				}
-
-				hdlc_tx_buf_len = deframed_bytes;
-				hdlc_tx_buf_pos = 0;
-
-				//fprintf(stderr, "pppd wrote: %s\n\n",  osmo_hexdump(pppd_rx_buf, len));
 			}
 		}
 
