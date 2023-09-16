@@ -14,7 +14,7 @@ DEPFLAGS_LD = `pkg-config --libs $(DEPS)`
 OBJS = $(patsubst %.c,%.o,$(wildcard *.c))
 HDRS = $(wildcard *.h)
 
-all: x75
+all: ../src/x75
 
 %.o : %.c $(HDRS) Makefile
 	$(CC) -c $(CCFLAGS) $(DEPFLAGS_CC) $< -o $@
