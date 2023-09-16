@@ -11,17 +11,11 @@
 #include "yate_codec.h"
 #include "yate_message.h"
 
-// yate interfacing code inspired by Karl Koscher <supersat@cs.washington.edu>
-
-
-// HDLC stuff 
-
+// HDLC stuff
 /* HDLC decoder state */
 struct osmo_isdnhdlc_vars hdlc_rx = {0};
-
 /* HDLC encoder state */
 struct osmo_isdnhdlc_vars hdlc_tx = {0};
-
 
 // Yate handling stuff
 #define FD_YATE_STDIN 0
@@ -29,27 +23,35 @@ struct osmo_isdnhdlc_vars hdlc_tx = {0};
 #define FD_YATE_STDERR 2
 #define FD_YATE_SAMPLE_INPUT 3
 #define FD_YATE_SAMPLE_OUTPUT 4
-#define FD_MAX 5
 
-char yate_msg_buf[4096] = {0};
-int yate_msg_buf_pos = 0;
+// maximum packet size allowed over the PPP
+// (normal IP packets are 1500)
+#define MAX_MTU 2048
 
 // PPPD handling stuff
-uint8_t pppd_rx_buf[2048] = {0};
-uint8_t pppd_tx_buf[3000] = {0};
+uint8_t pppd_rx_buf[MAX_MTU] = {0};
+uint8_t pppd_tx_buf[MAX_MTU] = {0};
 int pppd_fd = -1;
 int pppd = 0;
 
+char yate_slin_samples[4096] = {0}; // buffer for the raw signed linear audio samples
+uint8_t inSampleBuf[sizeof(yate_slin_samples) / 2];  // buffer for data coming from the ISDN line
+uint8_t outSampleBuf[sizeof(yate_slin_samples) / 2]; // buffer for data going out to the ISDN line
+fd_set in_fds;
+fd_set out_fds;
+fd_set err_fds;
 
+uint8_t hdlc_rx_buf[MAX_MTU * 2] = {0}; // buffer for data decoded from ISDN HDLC frames
+uint8_t hdlc_tx_buf[MAX_MTU * 2] = {0}; // TX buffer for data to be sent via ISDN HDLC
+int hdlc_tx_buf_len = 0;
+int hdlc_tx_buf_pos = 0;
 
-void handle_incoming_hdlc_packet(uint8_t *buf, int len)
+void handle_incoming_hdlc_packet(uint8_t *buf, int buf_len)
 {
-	fprintf(stderr, "shark I 2023-09-13T19:33:00Z\nshark 000000 %s\n\n",  osmo_hexdump(buf, len));
+	//fprintf(stderr, "shark I 2023-09-13T19:33:00Z\nshark 000000 %s\n\n",  osmo_hexdump(buf, len));
 
 	// Encode the packet back into HDLC (this time byte aligned)
-    int32_t hdlc_bytes_written = pppd_rfc1662_encode(buf, len, pppd_tx_buf);
-
-	//fprintf(stderr, "PPPD W: %s\n\n",  osmo_hexdump(pppd_tx_buf, pos));
+    int32_t hdlc_bytes_written = pppd_rfc1662_encode(buf, buf_len, pppd_tx_buf);
 
 	if (write(pppd_fd, pppd_tx_buf, hdlc_bytes_written) != hdlc_bytes_written) {
 		fprintf(stderr, "can't write the entire PPPD outgoing buffer!\n");
@@ -57,30 +59,15 @@ void handle_incoming_hdlc_packet(uint8_t *buf, int len)
 	}
 }
 
-ssize_t len;
-ssize_t numSamples;
-char yate_slin_samples[4096] = {0};
-char yate_message_buf[4096] = {0};
-uint8_t inSampleBuf[sizeof(yate_slin_samples) / 2];
-uint8_t outSampleBuf[sizeof(yate_slin_samples) / 2];
-fd_set in_fds;
-fd_set out_fds;
-fd_set err_fds;
-
-uint8_t hdlc_rx_buf[sizeof(yate_slin_samples)] = {0}; // FIXME: size should be 2x maximum transmit packet + 2x FLAG + FCS
-uint8_t hdlc_tx_buf[sizeof(yate_slin_samples)] = {0};
-int hdlc_tx_buf_len = 0;
-int hdlc_tx_buf_pos = 0;
-
-void handle_sample_buffer(uint8_t *outSampleBuf, uint8_t *inSampleBuf, int numSamples)
+void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 {
 	int rv, count = 0;
 
 	int samplesProcessed = 0;	
-	while (samplesProcessed < numSamples)
+	while (samplesProcessed < num_samples)
 	{
 		rv = osmo_isdnhdlc_decode(&hdlc_rx,
-			inSampleBuf + samplesProcessed, numSamples - samplesProcessed, &count,
+                                  in_buf + samplesProcessed, num_samples - samplesProcessed, &count,
 			hdlc_rx_buf, sizeof(hdlc_rx_buf) - 3
 		);
 
@@ -103,19 +90,13 @@ void handle_sample_buffer(uint8_t *outSampleBuf, uint8_t *inSampleBuf, int numSa
 	}
 
 	// send packets
-
     samplesProcessed = 0;
-    while (samplesProcessed < numSamples) {
+    while (samplesProcessed < num_samples) {
         // FIXME: This is inefficient, we're sending at most a single packet per buffer (20ms, 160 bytes)
-        //if (hdlc_tx_buf_len) {
-        //    //fprintf(stderr, "osmo_isdnhdlc_encode: %s\n\n",  osmo_hexdump(hdlc_tx_buf + hdlc_tx_buf_pos, hdlc_tx_buf_len - hdlc_tx_buf_pos));
-        //    fprintf(stderr, "shark O 2023-09-13T19:33:00Z\nshark 000000 %s\n\n",
-        //            osmo_hexdump(hdlc_tx_buf + hdlc_tx_buf_pos, hdlc_tx_buf_len - hdlc_tx_buf_pos));
-        //}
         rv = osmo_isdnhdlc_encode(&hdlc_tx,
                                   (const uint8_t *) (&hdlc_tx_buf[hdlc_tx_buf_pos]), hdlc_tx_buf_len - hdlc_tx_buf_pos,
                                   &count,
-                                  outSampleBuf + samplesProcessed, numSamples - samplesProcessed
+                                  out_buf + samplesProcessed, num_samples - samplesProcessed
         );
 
         if (rv < 0) {
@@ -125,13 +106,11 @@ void handle_sample_buffer(uint8_t *outSampleBuf, uint8_t *inSampleBuf, int numSa
         if (rv > 0) {
             samplesProcessed += rv;
 
-            //fprintf(stderr, "O %s\n\n",  osmo_hexdump(outSampleBuf, rv));
             if (hdlc_tx_buf_len) {
                 hdlc_tx_buf_pos += count;
                 if (hdlc_tx_buf_pos == hdlc_tx_buf_len) {
                     // packet sent successfully
-                    fprintf(stderr, "packet sent successfully: hdlc_tx_buf_len: %d, count: %d\n", hdlc_tx_buf_len,
-                            count);
+                    //fprintf(stderr, "packet sent successfully: hdlc_tx_buf_len: %d, count: %d\n", hdlc_tx_buf_len, count);
                     hdlc_tx_buf_len = 0;
                     hdlc_tx_buf_pos = 0;
                 }
@@ -140,20 +119,37 @@ void handle_sample_buffer(uint8_t *outSampleBuf, uint8_t *inSampleBuf, int numSa
     }
 }
 
+// PPP sends HDLC(-ish, RFC1662) encoded data.
 uint8_t temp_pack_buf[2048] = {0};
 struct rfc1662_vars ppp_rfc1662_state = {0};
 
-
 int main(int argc, char const *argv[])
 {
-	start_pppd(&pppd_fd, &pppd);
-	fprintf(stderr, "fd: %d pid: %d\n", pppd_fd, pppd);
+    ssize_t len;
+    ssize_t numSamples;
+
+    start_pppd(&pppd_fd, &pppd);
+	fprintf(stderr, "pppd started, fd: %d pid: %d\n", pppd_fd, pppd);
 
 	osmo_isdnhdlc_rcv_init(&hdlc_rx, OSMO_HDLC_F_BITREVERSE);
 	osmo_isdnhdlc_out_init(&hdlc_tx, OSMO_HDLC_F_BITREVERSE);
 
-	while (!pppd || !waitpid(pppd, NULL, WNOHANG))
+    int loop_cycles = 0;
+
+	while (pppd)
 	{
+        // we don't want to send the waitpid syscall on each loop
+        loop_cycles++;
+        if (loop_cycles % 100 == 0)
+        {
+            // if the pppd process has exited, end our call too
+            if (waitpid(pppd, NULL, WNOHANG) > 0)
+            {
+                fprintf(stderr, "pppd (pid: %d) has died. Exiting yate_hdlc_ppp.\n", pppd);
+                pppd = 0;
+            }
+        }
+
 		FD_ZERO(&in_fds);
 		FD_ZERO(&out_fds);
 		FD_ZERO(&err_fds);
@@ -184,36 +180,10 @@ int main(int argc, char const *argv[])
 
 		// Yate will send us messages through STDIN
 		if (FD_ISSET(FD_YATE_STDIN, &in_fds)) {
-			len = read(FD_YATE_STDIN, yate_message_buf, sizeof(yate_message_buf));
-			if (len <= 0) {
-				fprintf(stderr, "FD_YATE_STDIN read failed\n");
-				break;
-			}
-			for (int i = 0; i < len; i++) {
-				if (yate_msg_buf_pos == sizeof(yate_msg_buf) - 1)
-				{
-					fprintf(stderr, "Yate incoming message buffer overflowed. Aborting.\n");
-					memset(yate_msg_buf, 0x00, sizeof(yate_msg_buf));
-					yate_msg_buf_pos = 0;
-					break;
-				}
-
-				yate_msg_buf[yate_msg_buf_pos] = yate_message_buf[i];
-				yate_msg_buf_pos++;
-
-				if (yate_message_buf[i] == '\n') {
-					// process incoming message
-					yate_msg_buf[yate_msg_buf_pos - 1] = 0x00;
-					fprintf(stderr, "Yate incoming message: %s\n", yate_msg_buf);
-
-                    yate_message_parse_incoming(yate_msg_buf, yate_msg_buf_pos);
-
-					memset(yate_msg_buf, 0x00, sizeof(yate_msg_buf));
-					yate_msg_buf_pos = 0;
-				}
-			}
+            yate_message_read_from_fd(FD_YATE_STDIN, stdout);
 		}
 
+        // Data being sent from PPPD
 		if (FD_ISSET(pppd_fd, &in_fds)) 
 		{
 			// no packet in tx buffer? 
@@ -223,7 +193,7 @@ int main(int argc, char const *argv[])
 				if (len <= 0) {
 					break;
 				}
-				fprintf(stderr, "pppd TX (HDLC): %s\n\n",  osmo_hexdump(pppd_rx_buf, len));
+				//fprintf(stderr, "pppd TX (HDLC): %s\n\n",  osmo_hexdump(pppd_rx_buf, len));
 
                 int bytes_read = 0;
                 int count;
@@ -234,14 +204,13 @@ int main(int argc, char const *argv[])
 
                     if (rv > 0)
                     {
-                        fprintf(stderr, "rv: %d, count: %d, bytes_read: %d\n", rv, count, bytes_read);
-                        fprintf(stderr, "dec: %s\n", osmo_hexdump(temp_pack_buf, rv));
+                        //fprintf(stderr, "rv: %d, count: %d, bytes_read: %d\n", rv, count, bytes_read);
+                        //fprintf(stderr, "dec: %s\n", osmo_hexdump(temp_pack_buf, rv));
 
                         memcpy(hdlc_tx_buf, temp_pack_buf, rv);
                         hdlc_tx_buf_len = rv;
                     }
                 }
-
             }
 		}
 
@@ -253,7 +222,7 @@ int main(int argc, char const *argv[])
 			}
 			
 			if (len % 2) {
-				DLPRINTF("read an odd number of bytes!! (%d)\n", len);
+                fprintf(stderr, "read an odd number of bytes as samples from yate!! (%ld)\n", len);
 			}
 			numSamples = len / 2;
 
@@ -273,8 +242,6 @@ int main(int argc, char const *argv[])
 		}
 
 	}
-
-	//kill(pppd, SIGKILL);
 
 	return 0;
 }

@@ -55,14 +55,14 @@ int main()
 //    rv = pppd_rfc1662_decode(&hdlc_rx, hdlc3, sizeof (hdlc3), &count, raw, sizeof(raw));
 //    printf("rv: %d, count: %d\n", rv, count);
 //    printf("dec: %s\n", osmo_hexdump(raw, rv));
-    osmo_isdnhdlc_out_init(&hdlc_tx, OSMO_HDLC_F_BITREVERSE);
+    osmo_isdnhdlc_out_init(&hdlc_tx, 0);
 
     int rv;
     int count;
     uint8_t out[512] = {0};
-    uint8_t data[512] = { 0 };
+    uint8_t data[40] = { 0 };
     for (int i = 0; i < sizeof(data); ++i) {
-        data[i] = i & 0xFF;
+        data[i] = (uint8_t) i;
     }
 
 
