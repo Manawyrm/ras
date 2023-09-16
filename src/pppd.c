@@ -6,7 +6,9 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <osmocom/core/msgb.h>
 #include "pppd.h"
+#include "config.h"
 
 const char *PPPD = "/usr/sbin/pppd";
 int getPtyMaster(char *, int);
@@ -161,6 +163,36 @@ int pppd_rfc1662_decode(struct rfc1662_vars *state, const uint8_t *src,
     return 0;
 }
 
+// PPP sends HDLC(-ish, RFC1662) encoded data.
+uint8_t temp_pack_buf[2048] = {0};
+struct rfc1662_vars ppp_rfc1662_state = {0};
+uint8_t pppd_rx_buf[MAX_MTU] = {0};
+
+int pppd_input_cb(struct osmo_fd *fd, unsigned int what)
+{
+    ssize_t len;
+
+    len = read(fd->fd, pppd_rx_buf, sizeof(pppd_rx_buf));
+    if (len <= 0) {
+        return -1;
+    }
+
+    int bytes_read = 0;
+    int count;
+    while (bytes_read != len - 1)
+    {
+        int rv = pppd_rfc1662_decode(&ppp_rfc1662_state, pppd_rx_buf + bytes_read, len - bytes_read, &count, temp_pack_buf, sizeof(temp_pack_buf));
+        bytes_read += count;
+
+        if (rv > 0)
+        {
+            void (*queue_packet)(uint8_t *, int) = fd->data;
+            (*queue_packet)(temp_pack_buf, rv);
+        }
+    }
+    return 0;
+}
+
 
 int start_pppd(int *fd, int *pppd)
 {
@@ -218,12 +250,6 @@ int start_pppd(int *fd, int *pppd)
 	//	stropt[pos] = NULL;
 	//}
 
-	stropt[pos] = strdup ("auth"); // PPPD options
-	pos++;
-
-	stropt[pos] = strdup ("debug"); // PPPD options
-	pos++;
-
 	stropt[pos] = strdup ("file"); // PPPD options
 	pos++;
 
@@ -231,12 +257,6 @@ int start_pppd(int *fd, int *pppd)
 	pos++;
 
 	stropt[pos] = strdup ("172.21.118.1:172.21.118.5"); // PPPD options
-	pos++;
-
-	stropt[pos] = strdup ("passive"); // PPPD options
-	pos++;
-
-	stropt[pos] = strdup ("nodetach"); // PPPD options
 	pos++;
 
     stropt[pos] = NULL;

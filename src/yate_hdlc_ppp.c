@@ -4,11 +4,14 @@
 #include <osmocom/core/select.h>
 #include <osmocom/core/utils.h>
 #include <osmocom/core/isdnhdlc.h>
+#include <osmocom/core/msgb.h>
 #include <sys/wait.h>
+#include <errno.h>
 
 #include "pppd.h"
 #include "yate_codec.h"
 #include "yate_message.h"
+#include "config.h"
 
 // HDLC stuff
 /* HDLC decoder state */
@@ -16,24 +19,17 @@ struct osmo_isdnhdlc_vars hdlc_rx = {0};
 /* HDLC encoder state */
 struct osmo_isdnhdlc_vars hdlc_tx = {0};
 
-// Yate handling stuff
-#define FD_YATE_STDOUT 1
-#define FD_YATE_STDERR 2
-#define FD_YATE_SAMPLE_INPUT 3
-#define FD_YATE_SAMPLE_OUTPUT 4
+void *tall_ras_ctx = NULL;
 
+// Yate handling stuff
 #define FD_YATE_STDIN 0
 #define FD_YATE_SAMPLE_INPUT 3
+#define FD_YATE_SAMPLE_OUTPUT 4
 static struct osmo_fd stdin_ofd;
 static struct osmo_fd yate_sample_input_ofd;
 static struct osmo_fd pppd_ofd;
 
-// maximum packet size allowed over the PPP
-// (normal IP packets are 1500)
-#define MAX_MTU 2048
-
 // PPPD handling stuff
-uint8_t pppd_rx_buf[MAX_MTU] = {0};
 uint8_t pppd_tx_buf[MAX_MTU] = {0};
 int pppd_fd = -1;
 int pppd = 0;
@@ -41,19 +37,12 @@ int pppd = 0;
 char yate_slin_samples[4096] = {0}; // buffer for the raw signed linear audio samples
 uint8_t inSampleBuf[sizeof(yate_slin_samples) / 2];  // buffer for data coming from the ISDN line
 uint8_t outSampleBuf[sizeof(yate_slin_samples) / 2]; // buffer for data going out to the ISDN line
-fd_set in_fds;
-fd_set out_fds;
-fd_set err_fds;
 
 uint8_t hdlc_rx_buf[MAX_MTU * 2] = {0}; // buffer for data decoded from ISDN HDLC frames
-uint8_t hdlc_tx_buf[MAX_MTU * 2] = {0}; // TX buffer for data to be sent via ISDN HDLC
-int hdlc_tx_buf_len = 0;
-int hdlc_tx_buf_pos = 0;
+struct llist_head isdn_hdlc_tx_queue;
 
 void handle_incoming_hdlc_packet(uint8_t *buf, int buf_len)
 {
-	//fprintf(stderr, "shark I 2023-09-13T19:33:00Z\nshark 000000 %s\n\n",  osmo_hexdump(buf, len));
-
 	// Encode the packet back into HDLC (this time byte aligned)
     int32_t hdlc_bytes_written = pppd_rfc1662_encode(buf, buf_len, pppd_tx_buf);
 
@@ -62,6 +51,22 @@ void handle_incoming_hdlc_packet(uint8_t *buf, int buf_len)
 		return;
 	}
 }
+
+void handle_incoming_ppp_packet(uint8_t *buf, int len)
+{
+    struct msgb *msg;
+    uint8_t *ptr;
+
+    msg = msgb_alloc_c(tall_ras_ctx, len, "pppd receive/isdn hdlc transmit");
+    ptr = msgb_put(msg, len);
+    memcpy(ptr, buf, len);
+    msgb_enqueue(&isdn_hdlc_tx_queue, msg);
+}
+
+struct msgb *hdlc_tx_msgb = NULL;
+uint8_t *hdlc_tx_buf;
+int hdlc_tx_buf_pos;
+int hdlc_tx_buf_len;
 
 void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 {
@@ -77,7 +82,7 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 
 		if (rv > 0) {
 			handle_incoming_hdlc_packet(hdlc_rx_buf, rv);
-		} else  if (rv < 0) {
+		} else if (rv < 0) {
 			switch (rv) {
 				case -OSMO_HDLC_FRAMING_ERROR:
 					fprintf(stderr, "OSMO_HDLC_FRAMING_ERROR\n");
@@ -95,10 +100,23 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 
 	// send packets
     samplesProcessed = 0;
-    while (samplesProcessed < num_samples) {
-        // FIXME: This is inefficient, we're sending at most a single packet per buffer (20ms, 160 bytes)
+    while (samplesProcessed < num_samples)
+    {
+        // is there still a packet being transmitted?
+        if (!hdlc_tx_buf_len)
+        {
+            // get a new one from the queue
+            hdlc_tx_msgb = msgb_dequeue(&isdn_hdlc_tx_queue);
+            if (hdlc_tx_msgb != NULL)
+            {
+                // got one
+                hdlc_tx_buf = msgb_data(hdlc_tx_msgb);
+                hdlc_tx_buf_len = msgb_length(hdlc_tx_msgb);
+                hdlc_tx_buf_pos = 0;
+            }
+        }
         rv = osmo_isdnhdlc_encode(&hdlc_tx,
-                                  (const uint8_t *) (&hdlc_tx_buf[hdlc_tx_buf_pos]), hdlc_tx_buf_len - hdlc_tx_buf_pos,
+                                  (const uint8_t *) (hdlc_tx_buf + hdlc_tx_buf_pos), hdlc_tx_buf_len - hdlc_tx_buf_pos,
                                   &count,
                                   out_buf + samplesProcessed, num_samples - samplesProcessed
         );
@@ -112,20 +130,17 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 
             if (hdlc_tx_buf_len) {
                 hdlc_tx_buf_pos += count;
-                if (hdlc_tx_buf_pos == hdlc_tx_buf_len) {
-                    // packet sent successfully
-                    //fprintf(stderr, "packet sent successfully: hdlc_tx_buf_len: %d, count: %d\n", hdlc_tx_buf_len, count);
+                if (hdlc_tx_buf_pos == hdlc_tx_buf_len)
+                {
+                    // finished sending packet
                     hdlc_tx_buf_len = 0;
                     hdlc_tx_buf_pos = 0;
+                    msgb_free(hdlc_tx_msgb);
                 }
             }
         }
     }
 }
-
-// PPP sends HDLC(-ish, RFC1662) encoded data.
-uint8_t temp_pack_buf[2048] = {0};
-struct rfc1662_vars ppp_rfc1662_state = {0};
 
 int yate_sample_input_cb(struct osmo_fd *fd, unsigned int what)
 {
@@ -157,41 +172,14 @@ int yate_sample_input_cb(struct osmo_fd *fd, unsigned int what)
     return 0;
 }
 
-int pppd_input_cb(struct osmo_fd *fd, unsigned int what)
-{
-    ssize_t len;
-    // no packet in tx buffer?
-    if (!hdlc_tx_buf_len)
-    {
-        len = read(fd->fd, pppd_rx_buf, 160);
-        if (len <= 0) {
-            return -1;
-        }
-        //fprintf(stderr, "pppd TX (HDLC): %s\n\n",  osmo_hexdump(pppd_rx_buf, len));
-
-        int bytes_read = 0;
-        int count;
-        while (bytes_read != len - 1)
-        {
-            int rv = pppd_rfc1662_decode(&ppp_rfc1662_state, pppd_rx_buf + bytes_read, len - bytes_read, &count, temp_pack_buf, sizeof(temp_pack_buf));
-            bytes_read += count;
-
-            if (rv > 0)
-            {
-                //fprintf(stderr, "rv: %d, count: %d, bytes_read: %d\n", rv, count, bytes_read);
-                //fprintf(stderr, "dec: %s\n", osmo_hexdump(temp_pack_buf, rv));
-
-                memcpy(hdlc_tx_buf, temp_pack_buf, rv);
-                hdlc_tx_buf_len = rv;
-            }
-        }
-    }
-
-    return 0;
-}
-
 int main(int argc, char const *argv[])
 {
+    tall_ras_ctx = talloc_named_const(NULL, 1, "RAS context");
+    if (!tall_ras_ctx)
+        return -ENOMEM;
+    msgb_talloc_ctx_init(tall_ras_ctx, 0);
+    INIT_LLIST_HEAD(&isdn_hdlc_tx_queue);
+
     start_pppd(&pppd_fd, &pppd);
 	fprintf(stderr, "pppd started, fd: %d pid: %d\n", pppd_fd, pppd);
 
@@ -209,7 +197,7 @@ int main(int argc, char const *argv[])
     osmo_fd_register(&yate_sample_input_ofd);
 
     // transmitted frames from pppd
-    osmo_fd_setup(&pppd_ofd, pppd_fd, OSMO_FD_READ | OSMO_FD_EXCEPT, pppd_input_cb, NULL, 0);
+    osmo_fd_setup(&pppd_ofd, pppd_fd, OSMO_FD_READ | OSMO_FD_EXCEPT, pppd_input_cb, &handle_incoming_ppp_packet, 0);
     osmo_fd_register(&pppd_ofd);
 
     while (pppd)
@@ -229,5 +217,8 @@ int main(int argc, char const *argv[])
         osmo_select_main(0);
     }
 
-	return 0;
+    talloc_report_full(tall_ras_ctx, stderr);
+    talloc_free(tall_ras_ctx);
+
+    return 0;
 }

@@ -62,7 +62,7 @@ int main()
     int count;
     uint8_t out[512] = {0};
     uint8_t data[40] = { 0 };
-    for (int i = 0; i < sizeof(data); ++i) {
+    for (size_t i = 0; i < sizeof(data); ++i) {
         data[i] = (uint8_t) i;
     }
 
