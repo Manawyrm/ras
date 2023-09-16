@@ -3,11 +3,10 @@
 #include <unistd.h>
 #include <termios.h>
 #include <osmocom/core/utils.h>
+#include <osmocom/core/isdnhdlc.h>
 #include <sys/wait.h>
-
 #include "debug.h"
 #include "pppd.h"
-#include "isdnhdlc.h"
 #include "yate_codec.h"
 #include "yate_message.h"
 

@@ -25,7 +25,6 @@ noinst_PROGRAMS = \
 	$(NULL)
 
 yate_hdlc_ppp_SOURCES = \
-	isdnhdlc.c \
 	pppd.c \
 	pty.c \
 	yate_message.c \

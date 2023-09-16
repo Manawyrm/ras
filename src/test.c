@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <osmocom/core/utils.h>
+#include <osmocom/core/isdnhdlc.h>
+
 #include "pppd.h"
-#include "isdnhdlc.h"
 
 
 struct rfc1662_vars hdlc_rx = {0};

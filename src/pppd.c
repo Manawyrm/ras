@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
-#include "isdnhdlc.h"
 #include "pppd.h"
 
 const char *PPPD = "/usr/sbin/pppd";
