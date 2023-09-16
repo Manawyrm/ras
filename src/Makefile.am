@@ -28,7 +28,7 @@ yate_hdlc_ppp_SOURCES = \
 	pppd.c \
 	pty.c \
 	yate_message.c \
-	yate_codec.c \
+	yate.c \
 	yate_hdlc_ppp.c \
 	$(NULL)
 

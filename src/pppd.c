@@ -167,6 +167,7 @@ int pppd_rfc1662_decode(struct rfc1662_vars *state, const uint8_t *src,
 uint8_t temp_pack_buf[2048] = {0};
 struct rfc1662_vars ppp_rfc1662_state = {0};
 uint8_t pppd_rx_buf[MAX_MTU] = {0};
+uint8_t pppd_tx_buf[MAX_MTU] = {0};
 
 int pppd_input_cb(struct osmo_fd *fd, unsigned int what)
 {
@@ -193,6 +194,16 @@ int pppd_input_cb(struct osmo_fd *fd, unsigned int what)
     return 0;
 }
 
+void pppd_input_raw_packet(int pppd_fd, uint8_t *buf, int buf_len)
+{
+    // Encode the packet back into HDLC (this time byte aligned)
+    int32_t hdlc_bytes_written = pppd_rfc1662_encode(buf, buf_len, pppd_tx_buf);
+
+    if (write(pppd_fd, pppd_tx_buf, hdlc_bytes_written) != hdlc_bytes_written) {
+        fprintf(stderr, "can't write the entire PPPD outgoing buffer!\n");
+        return;
+    }
+}
 
 int start_pppd(int *fd, int *pppd)
 {
