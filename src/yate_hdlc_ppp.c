@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <termios.h>
+#include <osmocom/core/select.h>
 #include <osmocom/core/utils.h>
 #include <osmocom/core/isdnhdlc.h>
 #include <sys/wait.h>
-#include "debug.h"
+
 #include "pppd.h"
 #include "yate_codec.h"
 #include "yate_message.h"
@@ -17,11 +17,16 @@ struct osmo_isdnhdlc_vars hdlc_rx = {0};
 struct osmo_isdnhdlc_vars hdlc_tx = {0};
 
 // Yate handling stuff
-#define FD_YATE_STDIN 0
 #define FD_YATE_STDOUT 1
 #define FD_YATE_STDERR 2
 #define FD_YATE_SAMPLE_INPUT 3
 #define FD_YATE_SAMPLE_OUTPUT 4
+
+#define FD_YATE_STDIN 0
+#define FD_YATE_SAMPLE_INPUT 3
+static struct osmo_fd stdin_ofd;
+static struct osmo_fd yate_sample_input_ofd;
+static struct osmo_fd pppd_ofd;
 
 // maximum packet size allowed over the PPP
 // (normal IP packets are 1500)
@@ -122,11 +127,71 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 uint8_t temp_pack_buf[2048] = {0};
 struct rfc1662_vars ppp_rfc1662_state = {0};
 
-int main(int argc, char const *argv[])
+int yate_sample_input_cb(struct osmo_fd *fd, unsigned int what)
 {
     ssize_t len;
     ssize_t numSamples;
+    len = read(fd->fd, yate_slin_samples, sizeof(yate_slin_samples));
+    if (len <= 0) {
+        return -1;
+    }
+    if (len % 2) {
+        fprintf(stderr, "read an odd number of bytes as samples from yate!! (%ld)\n", len);
+    }
+    numSamples = len / 2;
 
+    yate_codec_slin_to_alaw((uint16_t*) yate_slin_samples, inSampleBuf, numSamples);
+
+    handle_sample_buffer(outSampleBuf, inSampleBuf, numSamples);
+
+    // echo test:
+    //memcpy(outSampleBuf, inSampleBuf, numSamples);
+
+    yate_codec_alaw_to_slin(outSampleBuf, (uint16_t *) yate_slin_samples, numSamples);
+
+    if (write(FD_YATE_SAMPLE_OUTPUT, yate_slin_samples, len) != len) {
+        fprintf(stderr, "can't write the entire outgoing buffer!\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+int pppd_input_cb(struct osmo_fd *fd, unsigned int what)
+{
+    ssize_t len;
+    // no packet in tx buffer?
+    if (!hdlc_tx_buf_len)
+    {
+        len = read(fd->fd, pppd_rx_buf, 160);
+        if (len <= 0) {
+            return -1;
+        }
+        //fprintf(stderr, "pppd TX (HDLC): %s\n\n",  osmo_hexdump(pppd_rx_buf, len));
+
+        int bytes_read = 0;
+        int count;
+        while (bytes_read != len - 1)
+        {
+            int rv = pppd_rfc1662_decode(&ppp_rfc1662_state, pppd_rx_buf + bytes_read, len - bytes_read, &count, temp_pack_buf, sizeof(temp_pack_buf));
+            bytes_read += count;
+
+            if (rv > 0)
+            {
+                //fprintf(stderr, "rv: %d, count: %d, bytes_read: %d\n", rv, count, bytes_read);
+                //fprintf(stderr, "dec: %s\n", osmo_hexdump(temp_pack_buf, rv));
+
+                memcpy(hdlc_tx_buf, temp_pack_buf, rv);
+                hdlc_tx_buf_len = rv;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int main(int argc, char const *argv[])
+{
     start_pppd(&pppd_fd, &pppd);
 	fprintf(stderr, "pppd started, fd: %d pid: %d\n", pppd_fd, pppd);
 
@@ -135,8 +200,20 @@ int main(int argc, char const *argv[])
 
     int loop_cycles = 0;
 
-	while (pppd)
-	{
+    // stdin is used for Yates message/event bus
+    osmo_fd_setup(&stdin_ofd, FD_YATE_STDIN, OSMO_FD_READ | OSMO_FD_EXCEPT, yate_message_read_cb, NULL, 0);
+    osmo_fd_register(&stdin_ofd);
+
+    // sample input from Yate
+    osmo_fd_setup(&yate_sample_input_ofd, FD_YATE_SAMPLE_INPUT, OSMO_FD_READ | OSMO_FD_EXCEPT, yate_sample_input_cb, NULL, 0);
+    osmo_fd_register(&yate_sample_input_ofd);
+
+    // transmitted frames from pppd
+    osmo_fd_setup(&pppd_ofd, pppd_fd, OSMO_FD_READ | OSMO_FD_EXCEPT, pppd_input_cb, NULL, 0);
+    osmo_fd_register(&pppd_ofd);
+
+    while (pppd)
+    {
         // we don't want to send the waitpid syscall on each loop
         loop_cycles++;
         if (loop_cycles % 100 == 0)
@@ -149,98 +226,8 @@ int main(int argc, char const *argv[])
             }
         }
 
-		FD_ZERO(&in_fds);
-		FD_ZERO(&out_fds);
-		FD_ZERO(&err_fds);
-
-		FD_SET(FD_YATE_STDIN, &in_fds);
-		FD_SET(FD_YATE_SAMPLE_INPUT, &in_fds);
-		FD_SET(pppd_fd, &in_fds);
-
-		FD_SET(FD_YATE_STDOUT, &out_fds);
-		FD_SET(FD_YATE_SAMPLE_OUTPUT, &out_fds);
-
-		for (int i = 0; i < 5; i++) {
-			FD_SET(i, &err_fds);
-		}
-		FD_SET(pppd_fd, &err_fds);
-
-		if (select(pppd_fd + 1, &in_fds, NULL, &err_fds, NULL) <= 0) {
-			fprintf(stderr, "select failed\n");
-			break;
-		}
-
-		for (int i = 0; i <= pppd_fd; i++) {
-			if (FD_ISSET(i, &err_fds)) {
-				fprintf(stderr, "fd %d is exceptional\n", i);
-				break;
-			}
-		}
-
-		// Yate will send us messages through STDIN
-		if (FD_ISSET(FD_YATE_STDIN, &in_fds)) {
-            yate_message_read_from_fd(FD_YATE_STDIN, stdout);
-		}
-
-        // Data being sent from PPPD
-		if (FD_ISSET(pppd_fd, &in_fds)) 
-		{
-			// no packet in tx buffer? 
-			if (!hdlc_tx_buf_len)
-			{
-				len = read(pppd_fd, pppd_rx_buf, 160);
-				if (len <= 0) {
-					break;
-				}
-				//fprintf(stderr, "pppd TX (HDLC): %s\n\n",  osmo_hexdump(pppd_rx_buf, len));
-
-                int bytes_read = 0;
-                int count;
-                while (bytes_read != len - 1)
-                {
-                    int rv = pppd_rfc1662_decode(&ppp_rfc1662_state, pppd_rx_buf + bytes_read, len - bytes_read, &count, temp_pack_buf, sizeof(temp_pack_buf));
-                    bytes_read += count;
-
-                    if (rv > 0)
-                    {
-                        //fprintf(stderr, "rv: %d, count: %d, bytes_read: %d\n", rv, count, bytes_read);
-                        //fprintf(stderr, "dec: %s\n", osmo_hexdump(temp_pack_buf, rv));
-
-                        memcpy(hdlc_tx_buf, temp_pack_buf, rv);
-                        hdlc_tx_buf_len = rv;
-                    }
-                }
-            }
-		}
-
-		// Yate will send us samples via FD 3
-		if (FD_ISSET(FD_YATE_SAMPLE_INPUT, &in_fds)) {
-			len = read(FD_YATE_SAMPLE_INPUT, yate_slin_samples, sizeof(yate_slin_samples));
-			if (len <= 0) {
-				break;
-			}
-			
-			if (len % 2) {
-                fprintf(stderr, "read an odd number of bytes as samples from yate!! (%ld)\n", len);
-			}
-			numSamples = len / 2;
-
-            yate_codec_slin_to_alaw((uint16_t*) yate_slin_samples, inSampleBuf, numSamples);
-
-			handle_sample_buffer(outSampleBuf, inSampleBuf, numSamples);
-
-			// echo test: 
-			//memcpy(outSampleBuf, inSampleBuf, numSamples);
-
-            yate_codec_alaw_to_slin(outSampleBuf, (uint16_t *) yate_slin_samples, numSamples);
-			
-			if (write(FD_YATE_SAMPLE_OUTPUT, yate_slin_samples, len) != len) {
-				fprintf(stderr, "can't write the entire outgoing buffer!\n");
-				break;
-			}
-		}
-
-	}
+        osmo_select_main(0);
+    }
 
 	return 0;
 }

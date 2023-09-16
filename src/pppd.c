@@ -187,7 +187,7 @@ int start_pppd(int *fd, int *pppd)
 		return -EINVAL;
 	}
 
-	/* set fd opened above to not echo so we don't see read our own packets
+	/* set fd opened above to not echo, so we don't see read our own packets
 	   back of the file descriptor that we just wrote them to */
 	tcgetattr (*fd, &ptyconf);
 	
@@ -238,6 +238,8 @@ int start_pppd(int *fd, int *pppd)
 
 	stropt[pos] = strdup ("nodetach"); // PPPD options
 	pos++;
+
+    stropt[pos] = NULL;
 
 	fprintf(stderr, "%s: I'm running: \n", __FUNCTION__);
 	for (x = 0; stropt[x]; x++)
