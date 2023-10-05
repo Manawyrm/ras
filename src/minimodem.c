@@ -11,11 +11,12 @@
 
 static int minimodem_run(int *minimodem_pid, int parent_write_fd, int child_write_fd, char **stropt)
 {
-    fprintf(stderr, "%s: I'm running: \n", __FUNCTION__);
+    fprintf(stderr, "%s: exec: ", __FUNCTION__);
     for (int x = 0; stropt[x]; x++)
     {
-        fprintf(stderr, "\"%s\" \n", stropt[x]);
+        fprintf(stderr, "%s ", stropt[x]);
     };
+    fprintf(stderr, "\n");
     *minimodem_pid = fork();
 
     if (*minimodem_pid < 0)
