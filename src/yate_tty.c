@@ -12,6 +12,7 @@
 #include <errno.h>
 #include "minimodem.h"
 #include "yate.h"
+#include "yate_message.h"
 
 // Talloc context
 void *tall_ras_ctx = NULL;
@@ -79,6 +80,11 @@ int minimodem_rx_cb(struct osmo_fd *fd, unsigned int what) {
     return 0;
 }
 
+void call_initialize(char *called, char *caller, char *format) {
+    fprintf(stderr, "call_initialize() called: %s\n", called);
+    fprintf(stderr, "call_initialize() caller: %s\n", caller);
+    fprintf(stderr, "call_initialize() format: %s\n", format);
+}
 
 int main(int argc, char const *argv[])
 {
@@ -114,7 +120,7 @@ int main(int argc, char const *argv[])
     osmo_fd_register(&minimodem_data_out_ofd);
 
     // register yate onto STDIN and FD3 (sample input)
-    yate_osmo_fd_register(&handle_sample_buffer);
+    yate_osmo_fd_register(&handle_sample_buffer, &call_initialize);
 
     while (true)
     {

@@ -82,10 +82,10 @@ void yate_codec_f32_to_slin(float *in, uint16_t *out, uint32_t numSamples)
     }
 }
 
-void yate_osmo_fd_register(void *handle_sample_buffer_cb)
+void yate_osmo_fd_register(void *handle_sample_buffer_cb, void *handle_yate_parameters_cb)
 {
     // stdin is used for Yates message/event bus
-    osmo_fd_setup(&stdin_ofd, FD_YATE_STDIN, OSMO_FD_READ | OSMO_FD_EXCEPT, yate_message_read_cb, NULL, 0);
+    osmo_fd_setup(&stdin_ofd, FD_YATE_STDIN, OSMO_FD_READ | OSMO_FD_EXCEPT, yate_message_read_cb, handle_yate_parameters_cb, 0);
     osmo_fd_register(&stdin_ofd);
 
     // sample input from Yate

@@ -165,7 +165,7 @@ int main(int argc, char const *argv[])
     int loop_cycles = 0;
 
     // register yate onto STDIN and FD3 (sample input)
-    yate_osmo_fd_register(&handle_sample_buffer);
+    yate_osmo_fd_register(&handle_sample_buffer, NULL);
 
     // transmitted frames from pppd
     osmo_fd_setup(&pppd_ofd, pppd_fd, OSMO_FD_READ | OSMO_FD_EXCEPT, pppd_input_cb, &handle_incoming_ppp_packet, 0);

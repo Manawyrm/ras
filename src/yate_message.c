@@ -5,11 +5,69 @@
 
 #include "yate_message.h"
 
-char yate_msg_buf[4096] = {0};
+#define STR_BUF_SIZE 4096
+
+char yate_msg_buf[STR_BUF_SIZE] = {0};
 int yate_msg_buf_pos = 0;
 
+char yate_called[STR_BUF_SIZE] = {0};
+char yate_caller[STR_BUF_SIZE] = {0};
+char yate_format[STR_BUF_SIZE] = {0};
+
 // yate interfacing code inspired by Karl Koscher <supersat@cs.washington.edu>
-void yate_message_parse_incoming(FILE *out, char *buf, int len)
+void yate_message_parse_parameter(char *buf)
+{
+    int len = strlen(buf);
+
+    char *end = memchr(buf, '=', len);
+    if (end == NULL)
+    {
+        return;
+    }
+    end[0] = 0x00;
+
+    char *key = buf;
+    char *value = end + 1;
+
+    if (strlen(key) == 0) return;
+    if (strlen(value) > STR_BUF_SIZE - 1) return;
+
+    if (strcmp(key, "callednr") == 0) strcpy(yate_called, value);
+    if (strcmp(key, "caller") == 0) strcpy(yate_caller, value);
+    if (strcmp(key, "format") == 0) strcpy(yate_format, value);
+}
+
+bool yate_message_parse_parameters(char *buf, int len)
+{
+    char *type = NULL;
+    int argument_counter = 0;
+    int remaining = len;
+
+    char *start = buf;
+    while (true)
+    {
+        char *end = memchr(start, ':', remaining);
+        if (end == NULL)
+        {
+            yate_message_parse_parameter(start);
+            if (type && strcmp(type, "call.execute") == 0)
+            {
+                return true;
+            }
+            return false;
+        }
+        remaining -= (end - start);
+        end[0] = 0x00;
+        yate_message_parse_parameter(start);
+        if (argument_counter == 1)
+            type = start;
+
+        start = end + 1;
+        argument_counter++;
+    }
+}
+
+bool yate_message_parse_incoming(FILE *out, char *buf, int len)
 {
     // we don't want to really talk to yate (just yet)
     // let's just answer it's execute call to make it happy.
@@ -18,7 +76,7 @@ void yate_message_parse_incoming(FILE *out, char *buf, int len)
     char *message_id = memchr(buf, ':', len);
     if(message_id == NULL)
     {
-        return;
+        return false;
     }
     // we don't want the first char (:)
     message_id += 1;
@@ -26,12 +84,21 @@ void yate_message_parse_incoming(FILE *out, char *buf, int len)
     char *message_id_end = memchr(message_id, ':', len - (message_id - buf));
     if(message_id_end == NULL)
     {
-        return;
+        return false;
     }
     message_id_end[0] = 0x00;
-    fprintf(stderr, "%%%%<message:%s:true:\n", message_id);
-    fprintf(out, "%%%%<message:%s:true:\n", message_id);
-    fflush(out);
+
+    bool call_execute = yate_message_parse_parameters(message_id_end + 1, len - (message_id_end - buf) - 1);
+    if (call_execute)
+    {
+        fprintf(stderr, "%%%%<message:%s:true:\n", message_id);
+        fprintf(out, "%%%%<message:%s:true:\n", message_id);
+        fflush(out);
+
+        return true;
+    }
+
+    return false;
 }
 
 int yate_message_read_cb(struct osmo_fd *fd, unsigned int what)
@@ -61,7 +128,12 @@ int yate_message_read_cb(struct osmo_fd *fd, unsigned int what)
             yate_msg_buf[yate_msg_buf_pos - 1] = 0x00;
             fprintf(stderr, "Yate incoming message: %s\n", yate_msg_buf);
 
-            yate_message_parse_incoming(stdout, yate_msg_buf, yate_msg_buf_pos);
+            bool call_execute = yate_message_parse_incoming(stdout, yate_msg_buf, yate_msg_buf_pos);
+            if (call_execute && fd->data)
+            {
+                void (*call_initialize)(char *, char *, char *) = fd->data;
+                (*call_initialize)(yate_called, yate_caller, yate_format);
+            }
 
             memset(yate_msg_buf, 0x00, sizeof(yate_msg_buf));
             yate_msg_buf_pos = 0;
