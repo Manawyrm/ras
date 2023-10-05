@@ -36,6 +36,7 @@ yate_tty_SOURCES = \
 	yate_message.c \
 	yate.c \
 	minimodem.c \
+	telnet.c \
 	yate_tty.c \
 	$(NULL)
 

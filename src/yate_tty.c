@@ -13,11 +13,10 @@
 #include "minimodem.h"
 #include "yate.h"
 #include "yate_message.h"
+#include "telnet.h"
 
 // Talloc context
 void *tall_ras_ctx = NULL;
-
-static struct osmo_fd telnet_fd;
 
 // Minimodem TX -> alaw OUT
 int minimodem_tx_pid = -1;
@@ -33,6 +32,11 @@ int minimodem_data_out_fd = -1;
 char yate_slin_samplebuf[4096] = {0}; // buffer for the raw signed linear audio samples
 float minimodem_f32_tx_buf[sizeof(yate_slin_samplebuf) * 4]; // buffer for audio sent by minimodem (TX)
 float minimodem_f32_rx_buf[sizeof(yate_slin_samplebuf) * 4];
+
+int telnet_fd = -1;
+
+char *hostname = NULL;
+uint16_t port = 0;
 
 void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 {
@@ -55,7 +59,7 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 
 char text_buf[8192];
 
-int telnet_cb(struct osmo_fd *fd, unsigned int what) {
+int telnet_rx_cb(struct osmo_fd *fd, unsigned int what) {
     ssize_t len;
 
     len = read(fd->fd, text_buf, sizeof(text_buf));
@@ -76,7 +80,7 @@ int minimodem_rx_cb(struct osmo_fd *fd, unsigned int what) {
         return -1;
     }
 
-    write(telnet_fd.fd, text_buf, len);
+    write(telnet_fd, text_buf, len);
     return 0;
 }
 
@@ -84,34 +88,43 @@ void call_initialize(char *called, char *caller, char *format) {
     fprintf(stderr, "call_initialize() called: %s\n", called);
     fprintf(stderr, "call_initialize() caller: %s\n", caller);
     fprintf(stderr, "call_initialize() format: %s\n", format);
+
+    telnet_fd = telnet_init(&telnet_rx_cb, hostname, port);
+    if (telnet_fd < 0)
+    {
+        // connection setup failed.
+        fprintf(stderr, "Telnet connection could not be established: %d\n", telnet_fd);
+        exit(1);
+    }
 }
 
 int main(int argc, char const *argv[])
 {
+    if (argc != 2 && argc != 3) {
+        fprintf( stderr, " Not enough arguments given on command line.\n\n" );
+        fprintf( stderr, " usage: %s <hostname> <port>\n", argv[0] );
+        exit(1);
+    }
+    if (argc == 3) {
+        hostname = (char *) argv[1];
+        port = atoi(argv[2]);
+    }
+    if (argc == 2) {
+        // yate passes all arguments as a single one...
+        char *end = memchr(argv[1], ' ', strlen(argv[1]));
+        if (end == NULL)
+        {
+            exit(1);
+        }
+        end[0] = 0x00;
+
+        hostname = (char*) argv[1];
+        port = atoi(&end[1]);
+    }
+
     tall_ras_ctx = talloc_named_const(NULL, 1, "RAS context");
     if (!tall_ras_ctx)
         return -ENOMEM;
-    msgb_talloc_ctx_init(tall_ras_ctx, 0);
-
-    int loop_cycles = 0;
-
-    int rc = -1;
-    telnet_fd.cb = telnet_cb;
-    telnet_fd.when = OSMO_FD_READ | OSMO_FD_EXCEPT;
-    rc = osmo_sock_init_ofd(&telnet_fd, AF_INET,
-                            SOCK_STREAM, IPPROTO_TCP,
-                            "communityisdn.tbspace.de", 13097,
-                            OSMO_SOCK_F_CONNECT);
-
-    if (rc < 0)
-    {
-        fprintf(stderr, "Connection could not be established\n");
-        exit(1);
-    }
-    else
-    {
-        fprintf(stderr, "Connection established\n");
-    }
 
     minimodem_run_tty_tx(&minimodem_tx_pid, &minimodem_data_in_fd, &minimodem_sample_out_fd);
     minimodem_run_tty_rx(&minimodem_rx_pid, &minimodem_sample_in_fd, &minimodem_data_out_fd);
