@@ -12,19 +12,17 @@ noinst_HEADERS = \
 	$(NULL)
 
 bin_PROGRAMS = \
+    file_hdlc_decoder \
 	yate_hdlc_ppp \
+	yate_tty \
 	test \
-	$(NULL)
-
-bin_PROGRAMS = \
-	test \
-	yate_hdlc_ppp \
 	$(NULL)
 
 noinst_PROGRAMS = \
 	$(NULL)
 
 yate_hdlc_ppp_SOURCES = \
+    gsmtap.c \
 	pppd.c \
 	pty.c \
 	yate_message.c \
@@ -33,6 +31,22 @@ yate_hdlc_ppp_SOURCES = \
 	$(NULL)
 
 yate_hdlc_ppp_LDADD = $(LIBOSMOCORE_LIBS)
+
+yate_tty_SOURCES = \
+	yate_message.c \
+	yate.c \
+	minimodem.c \
+	yate_tty.c \
+	$(NULL)
+
+yate_tty_LDADD = $(LIBOSMOCORE_LIBS)
+
+file_hdlc_decoder_SOURCES = \
+    gsmtap.c \
+	file_hdlc_decoder.c \
+	$(NULL)
+
+file_hdlc_decoder_LDADD = $(LIBOSMOCORE_LIBS)
 
 test_SOURCES = \
 	pppd.c \
