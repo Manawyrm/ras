@@ -43,7 +43,7 @@ void yate_codec_alaw_slin_init()
     }
 }
 
-void yate_codec_slin_to_alaw(uint16_t *inSampleBuf, uint8_t *outSampleBuf, uint32_t numSamples)
+void yate_codec_slin_to_alaw(uint16_t *in, uint8_t *out, uint32_t numSamples)
 {
     // generate lookup table on first conversion
     if (s2a[0] == 0)
@@ -54,15 +54,31 @@ void yate_codec_slin_to_alaw(uint16_t *inSampleBuf, uint8_t *outSampleBuf, uint3
     // convert the "signed linear PCM" back to "alaw" (so we get our real bits back)
     for (uint32_t i = 0; i < numSamples; i++)
     {
-        outSampleBuf[i] = s2a[ inSampleBuf[i] ];
+        out[i] = s2a[ in[i] ];
     }
 }
 
-void yate_codec_alaw_to_slin(uint8_t *inSampleBuf, uint16_t *outSampleBuf, uint32_t numSamples)
+void yate_codec_alaw_to_slin(uint8_t *in, uint16_t *out, uint32_t numSamples)
 {
     for (uint32_t i = 0; i < numSamples; i++)
     {
-        ((int16_t *)outSampleBuf)[i] = a2s[ inSampleBuf[i] ];
+        ((int16_t *)out)[i] = a2s[ in[i] ];
+    }
+}
+
+void yate_codec_slin_to_f32(uint16_t *in, float *out, uint32_t numSamples)
+{
+    for (uint32_t i = 0; i < numSamples; i++)
+    {
+        out[i] = (float) in[i] / 32768.0f;
+    }
+}
+
+void yate_codec_f32_to_slin(float *in, uint16_t *out, uint32_t numSamples)
+{
+    for (uint32_t i = 0; i < numSamples; i++)
+    {
+        ((int16_t *)out)[i] = (in[i] * 32768.0f);
     }
 }
 
