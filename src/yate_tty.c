@@ -1,3 +1,6 @@
+// ITU V.18 - Operational and interworking requirements for DCEs operating in the text telephone mode
+// TTY/TDD, 45.45 baud, 1400/1800 Hz, 400 Hz shift, 5-bit baudot, half-duplex
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -14,9 +17,17 @@
 void *tall_ras_ctx = NULL;
 
 static struct osmo_fd telnet_fd;
-int minimodem_pid = -1;
+
+// Minimodem TX -> alaw OUT
+int minimodem_tx_pid = -1;
 int minimodem_data_in_fd = -1;
 int minimodem_sample_out_fd = -1;
+
+// alaw IN -> Minimodem RX
+int minimodem_rx_pid = -1;
+int minimodem_sample_in_fd = -1;
+static struct osmo_fd minimodem_data_out_ofd;
+int minimodem_data_out_fd = -1;
 
 char yate_slin_samplebuf[4096] = {0}; // buffer for the raw signed linear audio samples
 float minimodem_f32_tx_buf[sizeof(yate_slin_samplebuf) * 4]; // buffer for audio sent by minimodem (TX)
@@ -24,49 +35,47 @@ float minimodem_f32_rx_buf[sizeof(yate_slin_samplebuf) * 4];
 
 void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 {
-	int rv, count = 0;
     // yate.c provides us with alaw data here. This used to be slin16 once, but it was already converted.
+    // alaw IN -> Minimodem RX
+    yate_codec_alaw_to_slin(in_buf, (uint16_t*) yate_slin_samplebuf, num_samples);
+    yate_codec_slin_to_f32((uint16_t*) yate_slin_samplebuf, minimodem_f32_rx_buf, num_samples);
+    write(minimodem_sample_in_fd, (uint8_t*) minimodem_f32_rx_buf, num_samples * 4);
 
+    // Minimodem TX -> alaw OUT
     ssize_t len = read(minimodem_sample_out_fd, (uint8_t*) minimodem_f32_tx_buf, num_samples * 4);
     if (len <= 0)
     {
         fprintf(stderr, "didn't read enough data from minimodem\n");
         return;
     }
-
-    //fprintf(stderr, "read %d from minimodem: %s\n", num_samples, osmo_hexdump((uint8_t*)minimodem_f32_tx_buf, len));
-
     yate_codec_f32_to_slin(minimodem_f32_tx_buf, (uint16_t*) yate_slin_samplebuf, num_samples);
     yate_codec_slin_to_alaw((uint16_t*) yate_slin_samplebuf, out_buf, num_samples);
 }
 
-char test[8192];
+char text_buf[8192];
 
 int telnet_cb(struct osmo_fd *fd, unsigned int what) {
     ssize_t len;
 
-    len = read(fd->fd, test, sizeof(test));
+    len = read(fd->fd, text_buf, sizeof(text_buf));
     if (len <= 0) {
         return -1;
     }
 
-    write(minimodem_data_in_fd, test, len);
+    write(minimodem_data_in_fd, text_buf, len);
 
     return 0;
 }
 
-int minimodem_tx_cb(struct osmo_fd *fd, unsigned int what) {
+int minimodem_rx_cb(struct osmo_fd *fd, unsigned int what) {
     ssize_t len;
 
-    len = read(fd->fd, test, sizeof(test));
+    len = read(fd->fd, text_buf, sizeof(text_buf));
     if (len <= 0) {
         return -1;
     }
 
-    fprintf(stderr, "[minimodem_tx_cb] Read %zd bytes\n", len);
-
-    //write(1, test, len);
-
+    write(telnet_fd.fd, text_buf, len);
     return 0;
 }
 
@@ -98,7 +107,11 @@ int main(int argc, char const *argv[])
         fprintf(stderr, "Connection established\n");
     }
 
-    minimodem_run_tty_tx(&minimodem_pid, &minimodem_data_in_fd, &minimodem_sample_out_fd);
+    minimodem_run_tty_tx(&minimodem_tx_pid, &minimodem_data_in_fd, &minimodem_sample_out_fd);
+    minimodem_run_tty_rx(&minimodem_rx_pid, &minimodem_sample_in_fd, &minimodem_data_out_fd);
+
+    osmo_fd_setup(&minimodem_data_out_ofd, minimodem_data_out_fd, OSMO_FD_READ | OSMO_FD_EXCEPT, minimodem_rx_cb, NULL, 0);
+    osmo_fd_register(&minimodem_data_out_ofd);
 
     // register yate onto STDIN and FD3 (sample input)
     yate_osmo_fd_register(&handle_sample_buffer);

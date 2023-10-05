@@ -9,37 +9,10 @@
 
 #define MINIMODEM_CMD "/root/yate/share/scripts/tty/minimodem/src/minimodem"
 
-int minimodem_run_tty_tx(int *minimodem_pid, int *data_in_fd, int *sample_out_fd)
+static int minimodem_run(int *minimodem_pid, int parent_write_fd, int child_write_fd, char **stropt)
 {
-    int parent_write[2], child_write[2];
-    char *stropt[80];
-    int pos = 1;
-    int x;
-
-    pipe(parent_write);
-    pipe(child_write);
-
-    int ret = fcntl(child_write[0], F_SETPIPE_SZ, 160 * 4 * 16);
-    if (ret < 0) {
-        perror("set pipe size failed.");
-    }
-    ret = fcntl(child_write[1], F_SETPIPE_SZ, 160 * 4 * 16);
-    if (ret < 0) {
-        perror("set pipe size failed.");
-    }
-
-    stropt[0] = strdup (MINIMODEM_CMD);
-    stropt[pos++] = strdup ("-t");
-    stropt[pos++] = strdup ("-5");
-    stropt[pos++] = strdup ("-R");
-    stropt[pos++] = strdup ("8000");
-    stropt[pos++] = strdup ("-O");
-    stropt[pos++] = strdup ("tdd");
-    stropt[pos++] = strdup ("--tx-carrier");
-    stropt[pos] = NULL;
-
     fprintf(stderr, "%s: I'm running: \n", __FUNCTION__);
-    for (x = 0; stropt[x]; x++)
+    for (int x = 0; stropt[x]; x++)
     {
         fprintf(stderr, "\"%s\" \n", stropt[x]);
     };
@@ -59,8 +32,8 @@ int minimodem_run_tty_tx(int *minimodem_pid, int *data_in_fd, int *sample_out_fd
         /* close (2); No, we want to keep the connection to /dev/null. */
 
         /* connect the pty to stdin and stdout */
-        dup2(parent_write[0], 0);
-        dup2(child_write[1], 1);
+        dup2(parent_write_fd, 0);
+        dup2(child_write_fd, 1);
 
         /* close all the calls pty fds */
         close (2);
@@ -71,17 +44,75 @@ int minimodem_run_tty_tx(int *minimodem_pid, int *data_in_fd, int *sample_out_fd
         fprintf(stderr, "%s: Exec of %s failed!\n", __FUNCTION__, MINIMODEM_CMD);
         _exit (1);
     }
-    close(parent_write[0]);
-    close(child_write[1]);
+    close(parent_write_fd);
+    close(child_write_fd);
+
+    int argc = 0;
+    while (stropt[argc])
+    {
+        free (stropt[argc]);
+        argc++;
+    };
+
+    return 0;
+}
+
+int minimodem_run_tty_tx(int *minimodem_pid, int *data_in_fd, int *sample_out_fd)
+{
+    int parent_write[2], child_write[2];
+    char *stropt[80];
+    int pos = 1;
+
+    pipe(parent_write);
+    pipe(child_write);
+
+    // reduce buffer sizes for output buffer (we want minimodem to stall its sample output when we're not reading any more data)
+    // we're reading samples from the minimodem TX with the incoming line rate, to generate the same amount of data we're receiving.
+    int ret = fcntl(child_write[0], F_SETPIPE_SZ, 160 * 4 * 16);
+    if (ret < 0) {
+        perror("set pipe size failed.");
+    }
+    ret = fcntl(child_write[1], F_SETPIPE_SZ, 160 * 4 * 16);
+    if (ret < 0) {
+        perror("set pipe size failed.");
+    }
+
+    stropt[0] = strdup (MINIMODEM_CMD);
+    stropt[pos++] = strdup ("--tx");
+    stropt[pos++] = strdup ("--baudot");
+    stropt[pos++] = strdup ("--samplerate");
+    stropt[pos++] = strdup ("8000");
+    stropt[pos++] = strdup ("--stdio");
+    stropt[pos++] = strdup ("--tx-carrier");
+    stropt[pos++] = strdup ("tdd");
+    stropt[pos] = NULL;
 
     *data_in_fd = parent_write[1];
     *sample_out_fd = child_write[0];
 
-    pos = 0;
-    while (stropt[pos])
-    {
-        free (stropt[pos]);
-        pos++;
-    };
-    return 0;
+    return minimodem_run(minimodem_pid, parent_write[0], child_write[1], stropt);
+}
+
+int minimodem_run_tty_rx(int *minimodem_pid, int *sample_in_fd, int *data_out_fd)
+{
+    int parent_write[2], child_write[2];
+    char *stropt[80];
+    int pos = 1;
+
+    pipe(parent_write);
+    pipe(child_write);
+
+    stropt[0] = strdup (MINIMODEM_CMD);
+    stropt[pos++] = strdup ("--rx");
+    stropt[pos++] = strdup ("--baudot");
+    stropt[pos++] = strdup ("--samplerate");
+    stropt[pos++] = strdup ("8000");
+    stropt[pos++] = strdup ("--stdio");
+    stropt[pos++] = strdup ("tdd");
+    stropt[pos] = NULL;
+
+    *sample_in_fd = parent_write[1];
+    *data_out_fd = child_write[0];
+
+    return minimodem_run(minimodem_pid, parent_write[0], child_write[1], stropt);
 }
