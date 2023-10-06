@@ -15,6 +15,12 @@ RAS will then start pppd on the local machine and forward any frames to/from the
 - [X.75](https://www.itu.int/rec/dologin_pub.asp?lang=f&id=T-REC-X.75-199610-I!!PDF-E&type=items), no V.42bis compression
 - TTY/TDD ([ITU-T V.18](https://www.itu.int/rec/dologin_pub.asp?lang=s&id=T-REC-V.18-200011-I!!PDF-E&type=items), 5bit baudot, 45baud, 1400/1800 Hz), G.711a-encoded
 
+Advantages over PortMaster 3
+--------
+- No lost data at TCP RST (last few bytes will get lost, "Goodbye" messages from BBSes, clean protocol shutdown, etc.)
+- No limit at ~2048byte/s
+- Entirely software
+
 Yate dialplan
 --------
 ```js

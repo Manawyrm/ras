@@ -3,7 +3,14 @@
 #include <osmocom/core/msgb.h>
 #include <osmocom/core/timer.h>
 
-struct net_device;
+/* Define Link State constants. */
+enum {
+    X75_STATE_0,	/* Disconnected State		*/
+    X75_STATE_1,	/* Awaiting Connection State	*/
+    X75_STATE_2,	/* Awaiting Disconnection State	*/
+    X75_STATE_3,	/* Data Transfer State		*/
+    X75_STATE_4	    /* Frame Reject State		*/
+};
 
 #define	X75_OK			    0
 #define	X75_BADTOKEN		1

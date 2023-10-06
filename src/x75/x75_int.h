@@ -52,15 +52,6 @@
 #define	X75_ADDR_C	0x0F
 #define	X75_ADDR_D	0x07
 
-/* Define Link State constants. */
-enum {
-    X75_STATE_0,	/* Disconnected State		*/
-    X75_STATE_1,	/* Awaiting Connection State	*/
-    X75_STATE_2,	/* Awaiting Disconnection State	*/
-    X75_STATE_3,	/* Data Transfer State		*/
-    X75_STATE_4	    /* Frame Reject State		*/
-};
-
 #define	X75_DEFAULT_MODE		(X75_STANDARD | X75_SLP | X75_DTE)
 #define	X75_DEFAULT_WINDOW		7		/* Window=7 */
 #define	X75_DEFAULT_T1			(5 * HZ)	/* T1=5s    */

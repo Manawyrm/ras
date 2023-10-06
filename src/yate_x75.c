@@ -19,7 +19,7 @@
 
 // Talloc context
 void *tall_ras_ctx = NULL;
-int telnet_fd = -1;
+static struct osmo_fd *telnet_ofd;
 
 char *hostname = NULL;
 uint16_t port = 0;
@@ -28,7 +28,7 @@ uint16_t port = 0;
 struct osmo_isdnhdlc_vars hdlc_rx = {0};
 /* HDLC encoder state */
 struct osmo_isdnhdlc_vars hdlc_tx = {0};
-uint8_t hdlc_rx_buf[MAX_MTU * 2] = {0}; // buffer for data decoded from ISDN HDLC frames
+uint8_t hdlc_rx_buf[X75_MAXIMUM_HDLC_RX_SIZE] = {0}; // buffer for data decoded from ISDN HDLC frames
 struct llist_head isdn_hdlc_tx_queue;
 
 struct msgb *hdlc_tx_msgb = NULL;
@@ -37,6 +37,31 @@ int hdlc_tx_buf_pos;
 int hdlc_tx_buf_len;
 
 struct x75_cb x75_instance = { 0 };
+
+enum {
+    YATEX75_IDLE,
+    YATEX75_TCPCONNECTED,
+    YATEX75_X75CONNECTED,
+    YATEX75_TCPDISCONNECTED,
+    YATEX75_X75DISCONNECTED
+};
+int state = YATEX75_IDLE;
+
+bool x75_can_write() {
+    // Flow control handling
+    // Is the X.75 state established?
+    if (x75_instance.state != X75_STATE_3 && x75_instance.state != X75_STATE_4)
+    {
+        return false;
+    }
+
+    if (x75_instance.write_queue_count > X75_FLOW_CONTROL_MAX_WRITE_QUEUE)
+    {
+        return false;
+    }
+
+    return true;
+}
 
 void isdn_packet_tx(uint8_t *buf, int len)
 {
@@ -130,22 +155,27 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 
 }
 
-bool connected = false;
+char telnet_rx_read_buf[X75_TCP_READ_BLOCK_SIZE];
 
-char text_buf[512];
 int telnet_rx_cb(struct osmo_fd *fd, unsigned int what) {
     ssize_t len;
 
-    len = read(fd->fd, text_buf, sizeof(text_buf));
+    if (!x75_can_write()) {
+        return -1;
+    }
+
+    len = read(fd->fd, telnet_rx_read_buf, sizeof(telnet_rx_read_buf));
     if (len <= 0) {
+        perror("failed to read from telnet fd");
+        state = YATEX75_TCPDISCONNECTED;
         return -1;
     }
 
     struct msgb *msg;
     uint8_t *ptr;
-    msg = msgb_alloc_headroom(len + 5, 5, "raw x75 payload data");
+    msg = msgb_alloc_headroom(len + 16, 16, "raw x75 payload data");
     ptr = msgb_put(msg, len);
-    memcpy(ptr, text_buf, len);
+    memcpy(ptr, telnet_rx_read_buf, len);
     x75_data_request(&x75_instance, msg);
 
     fprintf(stderr, "x75_data_request(%d)\n", len);
@@ -154,32 +184,34 @@ int telnet_rx_cb(struct osmo_fd *fd, unsigned int what) {
 }
 
 void call_initialize(char *called, char *caller, char *format) {
-    telnet_fd = telnet_init(&telnet_rx_cb, hostname, port);
-    if (telnet_fd < 0)
+    int rc = telnet_init(&telnet_rx_cb, hostname, port, &telnet_ofd);
+    if (rc < 0)
     {
         // connection setup failed.
-        fprintf(stderr, "Telnet connection could not be established: %d\n", telnet_fd);
+        fprintf(stderr, "Telnet connection could not be established: %d\n", rc);
         exit(1);
     }
+    state = YATEX75_TCPCONNECTED;
 }
 
 void yate_x75_connected(void *dev, int reason)
 {
     fprintf(stderr, "x75_connected\n");
-    connected = true;
+    state = YATEX75_X75CONNECTED;
 }
 
 void yate_x75_disconnected(void *dev, int reason)
 {
     fprintf(stderr, "x75_disconnected\n");
+    state = YATEX75_X75DISCONNECTED;
 }
 
 int  yate_x75_data_indication(void *dev, struct msgb *skb)
 {
     fprintf(stderr, "x75_data_indication\n");
-    if (telnet_fd)
+    if (telnet_ofd)
     {
-        write(telnet_fd, msgb_data(skb), msgb_length(skb));
+        write(telnet_ofd->fd, msgb_data(skb), msgb_length(skb));
     }
     return 0;
 }
@@ -206,6 +238,20 @@ static const struct x75_register_struct cb = {
         .data_indication = yate_x75_data_indication,
         .data_transmit = yate_x75_data_transmit,
 };
+
+struct osmo_timer_list disconnect_close_timer;
+struct osmo_timer_list force_exit_timer;
+
+void disconnect_close_cb()
+{
+    fprintf( stderr, "TCP socket error. Closing X.75 connection.\n" );
+    x75_disconnect_request(&x75_instance);
+}
+void force_exit_cb()
+{
+    fprintf( stderr, "X.75 connection still open. Forcefully terminating.\n" );
+    exit(1);
+}
 
 int main(int argc, char const *argv[])
 {
@@ -250,6 +296,24 @@ int main(int argc, char const *argv[])
     while (true)
     {
         osmo_select_main(0);
+
+        // Telnet->X.75 flow control (avoid 100% cpu/busy looping)
+        if (x75_can_write() && state == YATEX75_X75CONNECTED)
+        {
+            osmo_fd_read_enable(telnet_ofd);
+        } else {
+            osmo_fd_read_disable(telnet_ofd);
+        }
+
+        if (state == YATEX75_TCPDISCONNECTED)
+        {
+            state = YATEX75_X75DISCONNECTED;
+            osmo_timer_setup(&disconnect_close_timer, disconnect_close_cb, NULL);
+            osmo_timer_schedule(&disconnect_close_timer, 3, 0);
+            osmo_timer_setup(&force_exit_timer, force_exit_cb, NULL);
+            osmo_timer_schedule(&force_exit_timer, 10, 0);
+            osmo_fd_read_disable(telnet_ofd);
+        }
     }
 
     talloc_report_full(tall_ras_ctx, stderr);

@@ -106,39 +106,39 @@ int yate_message_read_cb(struct osmo_fd *fd, unsigned int what)
     ssize_t len;
     char temp_buf[4096] = {0};
 
-    len = read(fd->fd, temp_buf, sizeof(temp_buf));
-    if (len <= 0) {
-        fprintf(stderr, "FD_YATE_STDIN read failed\n");
-        return -1;
-    }
-    for (int i = 0; i < len; i++) {
-        if (yate_msg_buf_pos == sizeof(yate_msg_buf) - 1)
-        {
-            fprintf(stderr, "Yate incoming message buffer overflowed. Aborting.\n");
-            memset(yate_msg_buf, 0x00, sizeof(yate_msg_buf));
-            yate_msg_buf_pos = 0;
+    if (what & OSMO_FD_READ) {
+        len = read(fd->fd, temp_buf, sizeof(temp_buf));
+        if (len <= 0) {
+            fprintf(stderr, "FD_YATE_STDIN read failed\n");
+            osmo_fd_read_disable(fd);
             return -1;
         }
-
-        yate_msg_buf[yate_msg_buf_pos] = temp_buf[i];
-        yate_msg_buf_pos++;
-
-        if (temp_buf[i] == '\n') {
-            // process incoming message
-            yate_msg_buf[yate_msg_buf_pos - 1] = 0x00;
-            fprintf(stderr, "Yate incoming message: %s\n", yate_msg_buf);
-
-            bool call_execute = yate_message_parse_incoming(stdout, yate_msg_buf, yate_msg_buf_pos);
-            if (call_execute && fd->data)
-            {
-                void (*call_initialize)(char *, char *, char *) = fd->data;
-                (*call_initialize)(yate_called, yate_caller, yate_format);
+        for (int i = 0; i < len; i++) {
+            if (yate_msg_buf_pos == sizeof(yate_msg_buf) - 1) {
+                fprintf(stderr, "Yate incoming message buffer overflowed. Aborting.\n");
+                memset(yate_msg_buf, 0x00, sizeof(yate_msg_buf));
+                yate_msg_buf_pos = 0;
+                return -1;
             }
 
-            memset(yate_msg_buf, 0x00, sizeof(yate_msg_buf));
-            yate_msg_buf_pos = 0;
+            yate_msg_buf[yate_msg_buf_pos] = temp_buf[i];
+            yate_msg_buf_pos++;
+
+            if (temp_buf[i] == '\n') {
+                // process incoming message
+                yate_msg_buf[yate_msg_buf_pos - 1] = 0x00;
+                fprintf(stderr, "Yate incoming message: %s\n", yate_msg_buf);
+
+                bool call_execute = yate_message_parse_incoming(stdout, yate_msg_buf, yate_msg_buf_pos);
+                if (call_execute && fd->data) {
+                    void (*call_initialize)(char *, char *, char *) = fd->data;
+                    (*call_initialize)(yate_called, yate_caller, yate_format);
+                }
+
+                memset(yate_msg_buf, 0x00, sizeof(yate_msg_buf));
+                yate_msg_buf_pos = 0;
+            }
         }
     }
-
     return 0;
 }

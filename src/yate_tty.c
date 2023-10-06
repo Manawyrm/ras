@@ -33,7 +33,7 @@ char yate_slin_samplebuf[4096] = {0}; // buffer for the raw signed linear audio 
 float minimodem_f32_tx_buf[sizeof(yate_slin_samplebuf) * 4]; // buffer for audio sent by minimodem (TX)
 float minimodem_f32_rx_buf[sizeof(yate_slin_samplebuf) * 4];
 
-int telnet_fd = -1;
+static struct osmo_fd *telnet_ofd;
 
 char *hostname = NULL;
 uint16_t port = 0;
@@ -75,12 +75,16 @@ int telnet_rx_cb(struct osmo_fd *fd, unsigned int what) {
 int minimodem_rx_cb(struct osmo_fd *fd, unsigned int what) {
     ssize_t len;
 
+    if (!telnet_ofd) {
+        return -1;
+    }
+
     len = read(fd->fd, text_buf, sizeof(text_buf));
     if (len <= 0) {
         return -1;
     }
 
-    write(telnet_fd, text_buf, len);
+    write(telnet_ofd->fd, text_buf, len);
     return 0;
 }
 
@@ -89,11 +93,11 @@ void call_initialize(char *called, char *caller, char *format) {
     fprintf(stderr, "call_initialize() caller: %s\n", caller);
     fprintf(stderr, "call_initialize() format: %s\n", format);
 
-    telnet_fd = telnet_init(&telnet_rx_cb, hostname, port);
-    if (telnet_fd < 0)
+    int rc = telnet_init(&telnet_rx_cb, hostname, port, &telnet_ofd);
+    if (rc < 0)
     {
         // connection setup failed.
-        fprintf(stderr, "Telnet connection could not be established: %d\n", telnet_fd);
+        fprintf(stderr, "Telnet connection could not be established: %d\n", rc);
         exit(1);
     }
 }
