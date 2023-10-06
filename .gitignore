@@ -24,6 +24,7 @@ missing
 
 .deps
 .libs
+.dirstamp
 
 debian/.debhelper
 debian/autoreconf.*

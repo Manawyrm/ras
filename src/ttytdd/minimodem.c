@@ -6,6 +6,7 @@
 #include <linux/fcntl.h>
 
 #include "minimodem.h"
+#include "../config.h"
 
 #define MINIMODEM_CMD "/root/yate/share/scripts/tty/minimodem/src/minimodem"
 
@@ -69,18 +70,23 @@ int minimodem_run_tty_tx(int *minimodem_pid, int *data_in_fd, int *sample_out_fd
 
     // reduce buffer sizes for output buffer (we want minimodem to stall its sample output when we're not reading any more data)
     // we're reading samples from the minimodem TX with the incoming line rate, to generate the same amount of data we're receiving.
-    int ret = fcntl(child_write[0], F_SETPIPE_SZ, 160 * 4 * 16);
+    int ret = fcntl(child_write[0], F_SETPIPE_SZ, 160 * 4 * TTY_MINIMODEM_BUFFER_SIZE);
     if (ret < 0) {
         perror("set pipe size failed.");
     }
-    ret = fcntl(child_write[1], F_SETPIPE_SZ, 160 * 4 * 16);
+    ret = fcntl(child_write[1], F_SETPIPE_SZ, 160 * 4 * TTY_MINIMODEM_BUFFER_SIZE);
     if (ret < 0) {
         perror("set pipe size failed.");
+    }
+    if(fcntl(child_write[0], F_SETFL, O_NONBLOCK)!=0) {
+        fprintf(stderr, "failed to set nonblock 0: %s\n", strerror(errno));
+        return -EINVAL;
     }
 
     stropt[0] = strdup (MINIMODEM_CMD);
     stropt[pos++] = strdup ("--tx");
     stropt[pos++] = strdup ("--baudot");
+    stropt[pos++] = strdup ("--quiet");
     stropt[pos++] = strdup ("--samplerate");
     stropt[pos++] = strdup ("8000");
     stropt[pos++] = strdup ("--stdio");

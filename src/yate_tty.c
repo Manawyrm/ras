@@ -8,6 +8,7 @@
 #include <osmocom/core/msgb.h>
 #include <osmocom/core/socket.h>
 #include <osmocom/core/talloc.h>
+#include <osmocom/core/timer.h>
 
 #include <errno.h>
 #include "ttytdd/minimodem.h"
@@ -38,6 +39,8 @@ static struct osmo_fd *telnet_ofd;
 char *hostname = NULL;
 uint16_t port = 0;
 
+bool tcp_disconnected = false;
+
 void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 {
     // yate.c provides us with alaw data here. This used to be slin16 once, but it was already converted.
@@ -47,12 +50,18 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
     write(minimodem_sample_in_fd, (uint8_t*) minimodem_f32_rx_buf, num_samples * 4);
 
     // Minimodem TX -> alaw OUT
+    memset((uint8_t*) minimodem_f32_tx_buf, 0x00, num_samples * 4);
     ssize_t len = read(minimodem_sample_out_fd, (uint8_t*) minimodem_f32_tx_buf, num_samples * 4);
-    if (len <= 0)
-    {
-        fprintf(stderr, "didn't read enough data from minimodem\n");
-        return;
-    }
+
+    //if (len <= 0)
+    //{
+    //    fprintf(stderr, "didn't read enough data from minimodem\n");
+    //}
+    //if (len != num_samples * 4)
+    //{
+    //    fprintf(stderr, "len != num_samples * 4\n");
+    //}
+
     yate_codec_f32_to_slin(minimodem_f32_tx_buf, (uint16_t*) yate_slin_samplebuf, num_samples);
     yate_codec_slin_to_alaw((uint16_t*) yate_slin_samplebuf, out_buf, num_samples);
 }
@@ -64,9 +73,12 @@ int telnet_rx_cb(struct osmo_fd *fd, unsigned int what) {
 
     len = read(fd->fd, text_buf, sizeof(text_buf));
     if (len <= 0) {
+        tcp_disconnected = true;
+        osmo_fd_read_disable(fd);
         return -1;
     }
 
+    // FIXME: write queueing
     write(minimodem_data_in_fd, text_buf, len);
 
     return 0;
@@ -84,6 +96,7 @@ int minimodem_rx_cb(struct osmo_fd *fd, unsigned int what) {
         return -1;
     }
 
+    // FIXME: write queueing
     write(telnet_ofd->fd, text_buf, len);
     return 0;
 }
@@ -100,6 +113,14 @@ void call_initialize(char *called, char *caller, char *format) {
         fprintf(stderr, "Telnet connection could not be established: %d\n", rc);
         exit(1);
     }
+}
+
+struct osmo_timer_list force_exit_timer;
+
+void force_exit_cb()
+{
+    fprintf( stderr, "Telnet connection closed. Forcefully terminating.\n" );
+    exit(1);
 }
 
 int main(int argc, char const *argv[])
@@ -139,9 +160,23 @@ int main(int argc, char const *argv[])
     // register yate onto STDIN and FD3 (sample input)
     yate_osmo_fd_register(&handle_sample_buffer, &call_initialize);
 
+    uint64_t count = 0;
+
     while (true)
     {
         osmo_select_main(0);
+
+        count++;
+        if (count % 100 == 0) {
+            fprintf(stderr, "osmo_select_main() calls: %lu\n", count);
+        }
+
+        if (tcp_disconnected)
+        {
+            tcp_disconnected = false;
+            osmo_timer_setup(&force_exit_timer, force_exit_cb, NULL);
+            osmo_timer_schedule(&force_exit_timer, 10, 0);
+        }
     }
 
     talloc_report_full(tall_ras_ctx, stderr);
