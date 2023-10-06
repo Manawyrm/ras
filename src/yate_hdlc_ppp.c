@@ -8,7 +8,7 @@
 #include <sys/wait.h>
 #include <errno.h>
 
-#include "pppd.h"
+#include "ppp/pppd.h"
 #include "yate.h"
 #include "config.h"
 #include "gsmtap.h"

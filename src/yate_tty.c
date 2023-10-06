@@ -10,7 +10,7 @@
 #include <osmocom/core/talloc.h>
 
 #include <errno.h>
-#include "minimodem.h"
+#include "ttytdd/minimodem.h"
 #include "yate.h"
 #include "yate_message.h"
 #include "telnet.h"

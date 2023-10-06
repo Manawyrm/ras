@@ -24,8 +24,8 @@ noinst_PROGRAMS = \
 
 yate_hdlc_ppp_SOURCES = \
     gsmtap.c \
-	pppd.c \
-	pty.c \
+	ppp/pppd.c \
+	ppp/pty.c \
 	yate_message.c \
 	yate.c \
 	yate_hdlc_ppp.c \
@@ -36,7 +36,7 @@ yate_hdlc_ppp_LDADD = $(LIBOSMOCORE_LIBS)
 yate_tty_SOURCES = \
 	yate_message.c \
 	yate.c \
-	minimodem.c \
+	ttytdd/minimodem.c \
 	telnet.c \
 	yate_tty.c \
 	$(NULL)
@@ -66,8 +66,8 @@ file_hdlc_decoder_SOURCES = \
 file_hdlc_decoder_LDADD = $(LIBOSMOCORE_LIBS)
 
 test_SOURCES = \
-	pppd.c \
-	pty.c \
+	ppp/pppd.c \
+	ppp/pty.c \
 	test.c \
 	$(NULL)
 

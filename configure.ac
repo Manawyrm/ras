@@ -8,7 +8,7 @@ AC_CONFIG_AUX_DIR([.])
 dnl libtool init
 LT_INIT
 
-AM_INIT_AUTOMAKE([foreign dist-bzip2 no-dist-gzip 1.9])
+AM_INIT_AUTOMAKE([foreign dist-bzip2 no-dist-gzip subdir-objects 1.9])
 AC_CONFIG_TESTDIR(tests)
 
 CFLAGS="$CFLAGS -std=gnu11"
