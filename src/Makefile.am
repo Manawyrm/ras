@@ -47,7 +47,11 @@ yate_x75_SOURCES = \
 	yate_message.c \
 	yate.c \
 	telnet.c \
-	x75.c \
+	x75/x75_in.c \
+	x75/x75_out.c \
+    x75/x75_subr.c \
+    x75/x75_timer.c \
+    x75/x75_iface.c \
 	yate_x75.c \
 	gsmtap.c \
 	$(NULL)

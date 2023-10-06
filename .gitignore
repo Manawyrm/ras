@@ -1,6 +1,5 @@
 *.o
 *.raw
-src/x75
 disable/
 config.*
 .idea
@@ -35,7 +34,9 @@ debian/tmp
 *.lo
 *.o
 
-src/x75
+src/yate_x75
+src/yate_tty
 src/yate_hdlc_ppp
+src/file_hdlc_decoder
 src/test
 

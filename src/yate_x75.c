@@ -16,7 +16,7 @@
 #include "telnet.h"
 #include "config.h"
 #include "gsmtap.h"
-#include "x75.h"
+#include "x75/x75.h"
 
 // Talloc context
 void *tall_ras_ctx = NULL;
@@ -36,6 +36,8 @@ struct msgb *hdlc_tx_msgb = NULL;
 uint8_t *hdlc_tx_buf;
 int hdlc_tx_buf_pos;
 int hdlc_tx_buf_len;
+
+struct x75_cb x75_instance = { 0 };
 
 void isdn_packet_tx(uint8_t *buf, int len)
 {
@@ -63,7 +65,11 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 
         if (rv > 0) {
             gsmtap_send_packet(GSMTAP_E1T1_X75, true, hdlc_rx_buf, rv);
-            x75_recv(hdlc_rx_buf, rv);
+            fprintf(stderr, "msgb_alloc(%d)\n", rv);
+            struct msgb *skb = msgb_alloc_headroom(rv + 2048, 2048, "incoming hdlc packet");
+            uint8_t *ptr = msgb_push(skb, rv);
+            memcpy(ptr, hdlc_rx_buf, rv);
+            x75_data_received(&x75_instance, skb);
         } else if (rv < 0) {
             switch (rv) {
                 case -OSMO_HDLC_FRAMING_ERROR:
@@ -125,7 +131,9 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 
 }
 
-char text_buf[8192];
+bool connected = false;
+
+char text_buf[512];
 int telnet_rx_cb(struct osmo_fd *fd, unsigned int what) {
     ssize_t len;
 
@@ -134,7 +142,14 @@ int telnet_rx_cb(struct osmo_fd *fd, unsigned int what) {
         return -1;
     }
 
-    //write(minimodem_data_in_fd, text_buf, len);
+    struct msgb *msg;
+    uint8_t *ptr;
+    msg = msgb_alloc_headroom(len + 5, 5, "raw x75 payload data");
+    ptr = msgb_put(msg, len);
+    memcpy(ptr, text_buf, len);
+    x75_data_request(&x75_instance, msg);
+
+    fprintf(stderr, "x75_data_request(%d)\n", len);
 
     return 0;
 }
@@ -148,6 +163,50 @@ void call_initialize(char *called, char *caller, char *format) {
         exit(1);
     }
 }
+
+void yate_x75_connected(void *dev, int reason)
+{
+    fprintf(stderr, "x75_connected\n");
+    connected = true;
+}
+
+void yate_x75_disconnected(void *dev, int reason)
+{
+    fprintf(stderr, "x75_disconnected\n");
+}
+
+int  yate_x75_data_indication(void *dev, struct msgb *skb)
+{
+    fprintf(stderr, "x75_data_indication\n");
+    if (telnet_fd)
+    {
+        write(telnet_fd, msgb_data(skb), msgb_length(skb));
+    }
+    return 0;
+}
+
+void yate_x75_data_transmit(void *dev, struct msgb *skb) {
+    fprintf(stderr, "x75_data_transmit\n");
+
+    struct msgb *msg;
+    uint8_t *ptr;
+
+    msg = msgb_alloc_c(tall_ras_ctx, msgb_length(skb), "isdn hdlc transmit");
+    gsmtap_send_packet(GSMTAP_E1T1_X75, true, msgb_data(skb), msgb_length(skb));
+
+    ptr = msgb_put(msg, msgb_length(skb));
+    memcpy(ptr, msgb_data(skb), msgb_length(skb));
+    msgb_enqueue(&isdn_hdlc_tx_queue, msg);
+}
+
+static const struct x75_register_struct cb = {
+        .connect_confirmation = yate_x75_connected,
+        .connect_indication = yate_x75_connected,
+        .disconnect_confirmation = yate_x75_disconnected,
+        .disconnect_indication = yate_x75_disconnected,
+        .data_indication = yate_x75_data_indication,
+        .data_transmit = yate_x75_data_transmit,
+};
 
 int main(int argc, char const *argv[])
 {
@@ -184,7 +243,7 @@ int main(int argc, char const *argv[])
     osmo_isdnhdlc_rcv_init(&hdlc_rx, OSMO_HDLC_F_BITREVERSE);
     osmo_isdnhdlc_out_init(&hdlc_tx, OSMO_HDLC_F_BITREVERSE);
 
-    x75_init(&isdn_packet_tx);
+    x75_register(&x75_instance, &cb);
 
     // register yate onto STDIN and FD3 (sample input)
     yate_osmo_fd_register(&handle_sample_buffer, &call_initialize);
