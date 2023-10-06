@@ -12,7 +12,7 @@ Supported protocols
 --------
 - HDLC with PPP ([RFC1618](https://datatracker.ietf.org/doc/html/rfc1618))  
 RAS will then start pppd on the local machine and forward any frames to/from the ISDN line.
-- [X.75]([https://www.itu.int/rec/dologin_pub.asp?lang=f&id=T-REC-X.75-199610-I!!PDF-E&type=items]), no V.42bis compression
+- [X.75](https://www.itu.int/rec/dologin_pub.asp?lang=f&id=T-REC-X.75-199610-I!!PDF-E&type=items), no V.42bis compression
 - TTY/TDD ([ITU-T V.18](https://www.itu.int/rec/dologin_pub.asp?lang=s&id=T-REC-V.18-200011-I!!PDF-E&type=items), 5bit baudot, 45baud, 1400/1800 Hz), G.711a-encoded
 
 Yate dialplan
