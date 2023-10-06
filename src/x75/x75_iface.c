@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *	X75 release 002
- *
- *	This code REQUIRES 2.1.15 or higher/ NET3.038
+ *	X.75 Implementation
+ *	Based on Linux LAPB implementation by Jonathan Naulor
  *
  *	History
- *	X75 001	Jonathan Naylor	Started Coding
- *	X75 002	Jonathan Naylor	New timer architecture.
+ *	LAPB 001	Jonathan Naulor	Started Coding
+ *	LAPB 002	Jonathan Naylor	New timer architecture.
  *	2000-10-29	Henner Eisen	x75_data_indication() return status.
  */
-
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include "x75_int.h"
 
@@ -37,64 +34,30 @@ static struct x75_cb *x75_init_cb(struct x75_cb *x75)
 int x75_register(struct x75_cb *x75,
                   const struct x75_register_struct *callbacks)
 {
-    int rc = X75_BADTOKEN;
-    if (!x75)
-        goto out;
-
     x75_init_cb(x75);
-    rc = X75_NOMEM;
 
-    //x75->dev       = dev;
     x75->callbacks = callbacks;
     x75_start_t1timer(x75);
 
-    rc = X75_OK;
-    out:
-    //write_unlock_bh(&x75_list_lock);
-    return rc;
+    return X75_OK;
 }
 
 int x75_unregister(struct x75_cb *x75)
 {
-    int rc = X75_BADTOKEN;
-
-    //write_lock_bh(&x75_list_lock);
-
-    /* Wait for other refs to "x75" to drop */
-    //while (refcount_read(&x75->refcnt) > 2)
-    //    usleep_range(1, 10);
-
-    //spin_lock_bh(&x75->lock);
-
     x75_stop_t1timer(x75);
     x75_stop_t2timer(x75);
 
     x75_clear_queues(x75);
 
-    //spin_unlock_bh(&x75->lock);
-
     /* Wait for running timers to stop */
     osmo_timer_del(&x75->t1timer);
     osmo_timer_del(&x75->t2timer);
 
-    //__x75_remove_cb(x75);
-
-    //x75_put(x75);
-    rc = X75_OK;
-    out:
-    //write_unlock_bh(&x75_list_lock);
-    return rc;
+    return X75_OK;
 }
 
 int x75_getparms(struct x75_cb *x75, struct x75_parms_struct *parms)
 {
-    int rc = X75_BADTOKEN;
-
-    if (!x75)
-        goto out;
-
-    //spin_lock_bh(&x75->lock);
-
     parms->t1      = x75->t1 / HZ;
     parms->t2      = x75->t2 / HZ;
     parms->n2      = x75->n2;
@@ -113,23 +76,13 @@ int x75_getparms(struct x75_cb *x75, struct x75_parms_struct *parms)
     else
         parms->t2timer = (x75->t2timer.timeout.tv_sec) / HZ;
 
-    //spin_unlock_bh(&x75->lock);
-    //x75_put(x75);
-    rc = X75_OK;
-    out:
-    return rc;
+    return X75_OK;
 }
 
 int x75_setparms(struct x75_cb *x75, struct x75_parms_struct *parms)
 {
-    int rc = X75_BADTOKEN;
+    int rc = X75_INVALUE;
 
-    if (!x75)
-        goto out;
-
-    //spin_lock_bh(&x75->lock);
-
-    rc = X75_INVALUE;
     if (parms->t1 < 1 || parms->t2 < 1 || parms->n2 < 1)
         goto out_put;
 
@@ -151,20 +104,12 @@ int x75_setparms(struct x75_cb *x75, struct x75_parms_struct *parms)
 
     rc = X75_OK;
     out_put:
-    //spin_unlock_bh(&x75->lock);
-    //x75_put(x75);
-    out:
     return rc;
 }
 
 int x75_connect_request(struct x75_cb *x75)
 {
-    int rc = X75_BADTOKEN;
-
-    if (!x75)
-        goto out;
-
-    //spin_lock_bh(&x75->lock);
+    int rc = X75_OK;
 
     rc = X75_OK;
     if (x75->state == X75_STATE_1)
@@ -181,9 +126,6 @@ int x75_connect_request(struct x75_cb *x75)
 
     rc = X75_OK;
     out_put:
-    //spin_unlock_bh(&x75->lock);
-    //x75_put(x75);
-    out:
     return rc;
 }
 
@@ -220,26 +162,13 @@ static int __x75_disconnect_request(struct x75_cb *x75)
 
 int x75_disconnect_request(struct x75_cb *x75)
 {
-    int rc = X75_BADTOKEN;
-
-    if (!x75)
-        goto out;
-
-    //spin_lock_bh(&x75->lock);
-
-    rc = __x75_disconnect_request(x75);
-
-    //spin_unlock_bh(&x75->lock);
-    //x75_put(x75);
-    out:
-    return rc;
+    return __x75_disconnect_request(x75);
 }
 
 int x75_data_request(struct x75_cb *x75, struct msgb *skb)
 {
-    int rc = X75_BADTOKEN;
+    int rc = X75_NOTCONNECTED;
 
-    rc = X75_NOTCONNECTED;
     if (x75->state != X75_STATE_3 && x75->state != X75_STATE_4)
         goto out_put;
 
@@ -247,25 +176,13 @@ int x75_data_request(struct x75_cb *x75, struct msgb *skb)
     x75_kick(x75);
     rc = X75_OK;
     out_put:
-    //spin_unlock_bh(&x75->lock);
-    //x75_put(x75);
-    out:
     return rc;
 }
 
 int x75_data_received(struct x75_cb *x75, struct msgb *skb)
 {
-    int rc = X75_BADTOKEN;
-
-    if (x75) {
-        //spin_lock_bh(&x75->lock);
-        x75_data_input(x75, skb);
-        //spin_unlock_bh(&x75->lock);
-        //x75_put(x75);
-        rc = X75_OK;
-    }
-
-    return rc;
+    x75_data_input(x75, skb);
+    return X75_OK;
 }
 
 void x75_connect_confirmation(struct x75_cb *x75, int reason)
@@ -314,9 +231,9 @@ int x75_data_transmit(struct x75_cb *x75, struct msgb *skb)
 }
 
 /* Handle device status changes. */
-static int x75_device_event(struct notifier_block *this, unsigned long event,
-                             void *ptr)
-{
+//static int x75_device_event(struct notifier_block *this, unsigned long event,
+//                             void *ptr)
+//{
 //    struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 //    struct x75_cb *x75;
 //
@@ -389,4 +306,4 @@ static int x75_device_event(struct notifier_block *this, unsigned long event,
 //    //spin_unlock_bh(&x75->lock);
 //    x75_put(x75);
 //    return NOTIFY_DONE;
-}
+//}

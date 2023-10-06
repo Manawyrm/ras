@@ -6,7 +6,6 @@
 #include <unistd.h>
 #include <osmocom/core/select.h>
 #include <osmocom/core/msgb.h>
-#include <osmocom/core/socket.h>
 #include <osmocom/core/talloc.h>
 #include <osmocom/core/isdnhdlc.h>
 

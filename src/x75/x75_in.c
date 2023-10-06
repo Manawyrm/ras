@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *	X75 release 002
- *
- *	This code REQUIRES 2.1.15 or higher/ NET3.038
+ *	X.75 Implementation
+ *	Based on Linux LAPB implementation by Jonathan Naulor
  *
  *	History
- *	X75 001	Jonathan Naulor	Started Coding
- *	X75 002	Jonathan Naylor	New timer architecture.
+ *	LAPB 001	Jonathan Naulor	Started Coding
+ *	LAPB 002	Jonathan Naylor	New timer architecture.
  *	2000-10-29	Henner Eisen	x75_data_indication() return status.
  */
-
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include "x75_int.h"
 
