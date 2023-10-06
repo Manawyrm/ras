@@ -15,6 +15,7 @@ bin_PROGRAMS = \
     file_hdlc_decoder \
 	yate_hdlc_ppp \
 	yate_tty \
+	yate_x75 \
 	test \
 	$(NULL)
 
@@ -41,6 +42,17 @@ yate_tty_SOURCES = \
 	$(NULL)
 
 yate_tty_LDADD = $(LIBOSMOCORE_LIBS)
+
+yate_x75_SOURCES = \
+	yate_message.c \
+	yate.c \
+	telnet.c \
+	x75.c \
+	yate_x75.c \
+	gsmtap.c \
+	$(NULL)
+
+yate_x75_LDADD = $(LIBOSMOCORE_LIBS)
 
 file_hdlc_decoder_SOURCES = \
     gsmtap.c \
