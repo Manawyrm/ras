@@ -3,13 +3,27 @@ RAS
 RAS is a pure-software remote access server for ISDN (and similar) networks.
 It can be integrated into the dialplan of a PBX like Yate and will handle any incoming data calls.
 
-Currently, HDLC with PPP payload is implemented.
+Features
+--------
+- PPP handling (networking)
+- Telnet/Raw TCP forwarding
+
+Supported protocols
+--------
+- HDLC with PPP ([RFC1618](https://datatracker.ietf.org/doc/html/rfc1618))  
 RAS will then start pppd on the local machine and forward any frames to/from the ISDN line.
+- [X.75]([https://www.itu.int/rec/dologin_pub.asp?lang=f&id=T-REC-X.75-199610-I!!PDF-E&type=items]), no V.42bis compression
+- TTY/TDD ([ITU-T V.18](https://www.itu.int/rec/dologin_pub.asp?lang=s&id=T-REC-V.18-200011-I!!PDF-E&type=items), 5bit baudot, 45baud, 1400/1800 Hz), G.711a-encoded
 
 Yate dialplan
 --------
 ```js
+// PPP dialup
 Channel.callJust("external/playrec//opt/ras/src/yate_hdlc_ppp");
+// X.75 telnet forwarding
+Channel.callTo("external/playrec//opt/ras/src/yate_x75 tcpserver.de 23", {"callednr": callednr, "caller": caller, "format": format});
+// TTY telnet forwarding
+Channel.callTo("external/playrec//opt/ras/src/yate_tty ttyserver.de 23", {"callednr": callednr, "caller": caller, "format": format});
 ```
 
 Configuration for HDLC/PPP
@@ -27,7 +41,7 @@ Configuration for HDLC/PPP
 tc qdisc add dev $1 root cake bandwidth 128kbit
 ```
 
-`/etc/ppp/options.osmoras`:
+`/etc/ppp/options.isdnras`:
 ```
 require-mschap-v2
 multilink

@@ -264,7 +264,7 @@ int start_pppd(int *fd, int *pppd)
 	stropt[pos] = strdup ("file"); // PPPD options
 	pos++;
 
-	stropt[pos] = strdup ("/etc/ppp/options.osmoras"); // PPPD options
+	stropt[pos] = strdup ("/etc/ppp/options.isdnras"); // PPPD options
 	pos++;
 
 	stropt[pos] = strdup ("172.21.118.1:172.21.118.5"); // PPPD options

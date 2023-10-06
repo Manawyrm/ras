@@ -11,7 +11,8 @@
 
 #include "x75_int.h"
 
-static struct x75_cb *x75_init_cb(struct x75_cb *x75)
+int x75_register(struct x75_cb *x75,
+                  const struct x75_register_struct *callbacks)
 {
     INIT_LLIST_HEAD(&x75->write_queue);
     INIT_LLIST_HEAD(&x75->ack_queue);
@@ -28,14 +29,6 @@ static struct x75_cb *x75_init_cb(struct x75_cb *x75)
     x75->mode    = X75_STANDARD | X75_SLP | X75_DCE;
     x75->window  = X75_DEFAULT_WINDOW;
     x75->state   = X75_STATE_0;
-
-    return x75;
-}
-
-int x75_register(struct x75_cb *x75,
-                  const struct x75_register_struct *callbacks)
-{
-    x75_init_cb(x75);
 
     x75->callbacks = callbacks;
     x75_start_t1timer(x75);
