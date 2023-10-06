@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	X.75 Implementation
- *	Based on Linux LAPB implementation by Jonathan Naulor
+ *	Based on Linux LAPB implementation by Jonathan Naylor
  *
  *	History
- *	LAPB 001	Jonathan Naulor	Started Coding
+ *	LAPB 001	Jonathan Naylor	Started Coding
  *	LAPB 002	Jonathan Naylor	New timer architecture.
  *	2000-10-29	Henner Eisen	x75_data_indication() return status.
  */
@@ -24,7 +24,8 @@ static struct x75_cb *x75_init_cb(struct x75_cb *x75)
     x75->t1      = X75_DEFAULT_T1;
     x75->t2      = X75_DEFAULT_T2;
     x75->n2      = X75_DEFAULT_N2;
-    x75->mode    = X75_DEFAULT_MODE;
+    // DCE (inbound connection)
+    x75->mode    = X75_STANDARD | X75_SLP | X75_DCE;
     x75->window  = X75_DEFAULT_WINDOW;
     x75->state   = X75_STATE_0;
 

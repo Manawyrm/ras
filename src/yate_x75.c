@@ -64,7 +64,7 @@ void handle_sample_buffer(uint8_t *out_buf, uint8_t *in_buf, int num_samples)
 
         if (rv > 0) {
             gsmtap_send_packet(GSMTAP_E1T1_X75, true, hdlc_rx_buf, rv);
-            fprintf(stderr, "msgb_alloc(%d)\n", rv);
+            //fprintf(stderr, "msgb_alloc(%d)\n", rv);
             struct msgb *skb = msgb_alloc_headroom(rv + 2048, 2048, "incoming hdlc packet");
             uint8_t *ptr = msgb_push(skb, rv);
             memcpy(ptr, hdlc_rx_buf, rv);
