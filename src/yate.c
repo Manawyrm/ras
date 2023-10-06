@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <math.h>
 
 #include "yate.h"
 #include "yate_message.h"
@@ -66,19 +67,27 @@ void yate_codec_alaw_to_slin(uint8_t *in, uint16_t *out, uint32_t numSamples)
     }
 }
 
-void yate_codec_slin_to_f32(uint16_t *in, float *out, uint32_t numSamples)
+// both yate_codec_slin_to_f32 and yate_codec_f32_to_slin are based on libsamplerate
+// Copyright (c) 2002-2016, Erik de Castro Lopo <erikd@mega-nerd.com>
+void yate_codec_slin_to_f32 (uint16_t *in, float *out, uint32_t numSamples)
 {
-    for (uint32_t i = 0; i < numSamples; i++)
+    for (uint32_t i = 0 ; i < numSamples ; i++)
     {
-        out[i] = (float) in[i] / 32768.0f;
+        out [i] = (float) ((int16_t)in [i] / (1.0 * 0x8000));
     }
 }
 
-void yate_codec_f32_to_slin(float *in, uint16_t *out, uint32_t numSamples)
+void yate_codec_f32_to_slin (float *in, uint16_t *out, uint32_t len)
 {
-    for (uint32_t i = 0; i < numSamples; i++)
-    {
-        ((int16_t *)out)[i] = (in[i] * 32768.0f);
+    for (uint32_t i = 0 ; i < len ; i++)
+    {	float scaled_value ;
+        scaled_value = in [i] * 32768.f ;
+        if (scaled_value >= 32767.f)
+            ((int16_t *)out) [i] = 32767 ;
+        else if (scaled_value <= -32768.f)
+            ((int16_t *)out) [i] = -32768 ;
+        else
+            ((int16_t *)out) [i] = (short) (lrintf (scaled_value)) ;
     }
 }
 

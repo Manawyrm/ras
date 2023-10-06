@@ -90,7 +90,10 @@ int minimodem_run_tty_tx(int *minimodem_pid, int *data_in_fd, int *sample_out_fd
     stropt[pos++] = strdup ("--samplerate");
     stropt[pos++] = strdup ("8000");
     stropt[pos++] = strdup ("--stdio");
-    stropt[pos++] = strdup ("--tx-carrier");
+
+    // optional: send carrier permanently ("full-duplex")
+    //stropt[pos++] = strdup ("--tx-carrier");
+
     stropt[pos++] = strdup ("tdd");
     stropt[pos] = NULL;
 
