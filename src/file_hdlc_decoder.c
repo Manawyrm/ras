@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <osmocom/core/select.h>
 #include <osmocom/core/isdnhdlc.h>
+#include <osmocom/core/utils.h>
 
 #include "config.h"
 #include "gsmtap.h"
@@ -25,6 +26,7 @@ void handle_sample_buffer(struct osmo_isdnhdlc_vars *hdlc, uint8_t sub_type, boo
         );
 
         if (rv > 0) {
+            fprintf(stderr, "packet: %s\n", osmo_hexdump(hdlc_rx_buf, rv));
             gsmtap_send_packet(sub_type, network_to_user, hdlc_rx_buf, rv);
         } else if (rv < 0) {
             switch (rv) {
@@ -51,21 +53,21 @@ int main(int argc, char const *argv[])
     osmo_isdnhdlc_rcv_init(&hdlc_tx, OSMO_HDLC_F_BITREVERSE);
 
     FILE* file_rx = fopen(argv[1], "rb");
-    FILE* file_tx = fopen(argv[2], "rb");
+    //FILE* file_tx = fopen(argv[2], "rb");
 
     uint8_t data[16];
-    while (!feof(file_rx) || !feof(file_tx))
+    while (!feof(file_rx) /*|| !feof(file_tx)*/)
     {
         int ret = fread(data, 1, 16, file_rx);
         if (ret > 0)
             handle_sample_buffer(&hdlc_rx, GSMTAP_E1T1_X75, true, data, ret);
 
-        ret = fread(data, 1, 16, file_tx);
-        if (ret > 0)
-            handle_sample_buffer(&hdlc_tx,GSMTAP_E1T1_X75, false, data, ret);
+        //ret = fread(data, 1, 16, file_tx);
+        //if (ret > 0)
+        //    handle_sample_buffer(&hdlc_tx,GSMTAP_E1T1_X75, false, data, ret);
     }
     fclose(file_rx);
-    fclose(file_tx);
+    //fclose(file_tx);
 
     return 0;
 }
