@@ -17,6 +17,7 @@ bin_PROGRAMS = \
 	yate_tty \
 	yate_x75 \
 	yate_v110 \
+	fax_test \
 	test \
 	$(NULL)
 
@@ -69,6 +70,18 @@ yate_v110_SOURCES = \
 	$(NULL)
 
 yate_v110_LDADD = $(LIBOSMOCORE_LIBS) $(LIBOSMOTRAU_LIBS) $(LIBOSMOISDN_LIBS)
+
+fax_test_SOURCES = \
+	yate_message.c \
+	yate.c \
+	telnet.c \
+	fax_decode.c \
+    fax_test.c \
+	v110/soft_uart.c \
+	gsmtap.c \
+	$(NULL)
+
+fax_test_LDADD = $(LIBOSMOCORE_LIBS) $(LIBOSMOTRAU_LIBS) $(LIBOSMOISDN_LIBS) $(LIBSPANDSP_LIBS)
 
 file_hdlc_decoder_SOURCES = \
     gsmtap.c \
