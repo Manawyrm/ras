@@ -71,7 +71,7 @@ int gsmtap_send_packet(uint8_t sub_type, bool network_to_user, const uint8_t *da
 
     memcpy(buf + sizeof(*gh), data, len);
 
-    rc = write(gsmtap_inst_fd(g_gti), buf, gross_len);
+    rc = write(gsmtap_inst_fd2(g_gti), buf, gross_len);
     if (rc < 0) {
         fprintf(stderr, "write packet via gsmtap failed\n");
         free(buf);
@@ -101,7 +101,7 @@ int gsmtap_send_rlp(bool network_to_user, const uint8_t *data, unsigned int len)
 
     memcpy(buf + sizeof(*gh), data, len);
 
-    rc = write(gsmtap_inst_fd(g_gti), buf, gross_len);
+    rc = write(gsmtap_inst_fd2(g_gti), buf, gross_len);
     if (rc < 0) {
         fprintf(stderr, "write packet via gsmtap failed\n");
         free(buf);
