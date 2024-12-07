@@ -4,6 +4,9 @@
 #include <errno.h>
 #include <string.h>
 #include <linux/fcntl.h>
+// we cannot #include <fcntl.h> as this conflicts with linux/fcntl.h, but we need the above for F_SETPIPE_SZ,
+extern int fcntl (int __fd, int __cmd, ...);
+
 
 #include "minimodem.h"
 #include "../config.h"
