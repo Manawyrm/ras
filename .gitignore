@@ -1,7 +1,7 @@
 *.o
 *.raw
 disable/
-config.*
+/config.*
 .idea
 build/
 tests/
