@@ -178,7 +178,7 @@ int telnet_rx_cb(struct osmo_fd *fd, unsigned int what) {
     memcpy(ptr, telnet_rx_read_buf, len);
     x75_data_request(&x75_instance, msg);
 
-    fprintf(stderr, "x75_data_request(%d)\n", len);
+    fprintf(stderr, "x75_data_request(%zu)\n", len);
 
     return 0;
 }

@@ -53,7 +53,7 @@ int decode_test = FALSE;
 int rx_bits = 0;
 
 t30_state_t t30_dummy;
-t4_state_t t4_state;
+t4_rx_state_t t4_state;
 int t4_up = FALSE;
 
 hdlc_rx_state_t hdlcrx;
@@ -63,7 +63,7 @@ int fast_trained = FAX_NONE;
 uint8_t ecm_data[256][260];
 int16_t ecm_len[256];
 
-int line_encoding = T4_COMPRESSION_ITU_T4_1D;
+int line_encoding = T4_COMPRESSION_T4_1D;
 int x_resolution = T4_X_RESOLUTION_R8;
 int y_resolution = T4_Y_RESOLUTION_STANDARD;
 int image_width = 1728;
@@ -158,11 +158,11 @@ static int check_rx_dcs(const uint8_t *msg, int len)
 
     /* Check which compression we will use. */
     if ((dcs_frame[6] & DISBIT7))
-        line_encoding = T4_COMPRESSION_ITU_T6;
+        line_encoding = T4_COMPRESSION_T6;
     else if ((dcs_frame[4] & DISBIT8))
-        line_encoding = T4_COMPRESSION_ITU_T4_2D;
+        line_encoding = T4_COMPRESSION_T4_2D;
     else
-        line_encoding = T4_COMPRESSION_ITU_T4_1D;
+        line_encoding = T4_COMPRESSION_T4_1D;
     fprintf(stderr, "Selected compression %d\n", line_encoding);
 
     if ((current_fallback = find_fallback_entry(dcs_frame[4] & (DISBIT6 | DISBIT5 | DISBIT4 | DISBIT3))) < 0)
@@ -409,7 +409,7 @@ int span_fax_init()
 
     hdlc_rx_init(&hdlcrx, FALSE, TRUE, 5, hdlc_accept, NULL);
 
-    if (t4_rx_init(&t4_state, "fax_decode.tif", T4_COMPRESSION_ITU_T4_1D) == NULL)
+    if (t4_rx_init(&t4_state, "fax_decode.tif", T4_COMPRESSION_T4_1D) == NULL)
     {
         fprintf(stderr, "Failed to init\n");
         exit(0);
