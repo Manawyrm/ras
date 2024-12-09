@@ -1,3 +1,7 @@
+> [!CAUTION]
+> Old repository, moved over to https://gitea.osmocom.org/retronetworking/yate-ras
+
+
 RAS
 =============
 RAS is a pure-software remote access server for ISDN (and similar) networks.
