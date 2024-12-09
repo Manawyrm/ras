@@ -65,7 +65,6 @@ yate_v110_SOURCES = \
 	yate.c \
 	telnet.c \
 	yate_v110.c \
-	v110/soft_uart.c \
 	gsmtap.c \
 	$(NULL)
 
@@ -77,7 +76,6 @@ fax_test_SOURCES = \
 	telnet.c \
 	fax_decode.c \
     fax_test.c \
-	v110/soft_uart.c \
 	gsmtap.c \
 	$(NULL)
 

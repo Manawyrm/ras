@@ -5,11 +5,11 @@
 #include <osmocom/core/select.h>
 #include <osmocom/core/msgb.h>
 #include <osmocom/core/talloc.h>
+#include <osmocom/core/soft_uart.h>
 #include <osmocom/isdn/v110.h>
 #include <osmocom/trau/trau_sync.h>
 #include <osmocom/gsm/i460_mux.h>
 
-#include "v110/soft_uart.h"
 #include <errno.h>
 #include "yate.h"
 #include "yate_message.h"
